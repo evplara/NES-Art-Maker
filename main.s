@@ -23,37 +23,226 @@
 
 .segment	"CODE"
 
+;
+; while (PPUSTATUS & 0x80) {
+;
 L0008:	lda     $2002
 	and     #$80
 	bne     L0008
+;
+; while (!(PPUSTATUS & 0x80)) {
+;
 L0009:	lda     $2002
 	and     #$80
 	beq     L0009
+;
+; }
+;
 	rts
 
 .endproc
 
 ; ---------------------------------------------------------------
-; void __near__ ppu_write16 (unsigned int addr, unsigned char value)
+; void __near__ ppu_write (unsigned int addr, unsigned char value)
 ; ---------------------------------------------------------------
 
 .segment	"CODE"
 
-.proc	_ppu_write16: near
+.proc	_ppu_write: near
 
 .segment	"CODE"
 
+;
+; static void ppu_write(uint16_t addr, uint8_t value) {
+;
 	jsr     pusha
+;
+; PPUADDR = (uint8_t)(addr >> 8);     /* high byte */
+;
 	ldy     #$02
 	lda     (c_sp),y
 	sta     $2006
+;
+; PPUADDR = (uint8_t)(addr & 0xFF);   /* low byte  */
+;
 	dey
 	lda     (c_sp),y
 	sta     $2006
+;
+; PPUDATA = value;
+;
 	dey
 	lda     (c_sp),y
 	sta     $2007
+;
+; }
+;
 	jmp     incsp3
+
+.endproc
+
+; ---------------------------------------------------------------
+; void __near__ ppu_clear_nametable (void)
+; ---------------------------------------------------------------
+
+.segment	"CODE"
+
+.proc	_ppu_clear_nametable: near
+
+.segment	"CODE"
+
+;
+; PPUADDR = 0x20;
+;
+	jsr     decsp2
+	lda     #$20
+	sta     $2006
+;
+; PPUADDR = 0x00;
+;
+	lda     #$00
+	sta     $2006
+;
+; for (i = 0; i < 32u * 30u; ++i) {
+;
+	tay
+	sta     (c_sp),y
+	iny
+	sta     (c_sp),y
+L0002:	ldy     #$01
+	lda     (c_sp),y
+	cmp     #$03
+	bne     L0006
+	dey
+	lda     (c_sp),y
+	cmp     #$C0
+L0006:	bcs     L0003
+;
+; PPUDATA = 0;
+;
+	lda     #$00
+	sta     $2007
+;
+; for (i = 0; i < 32u * 30u; ++i) {
+;
+	tax
+	lda     #$01
+	jsr     addeq0sp
+	jmp     L0002
+;
+; PPUADDR = 0x23;
+;
+L0003:	lda     #$23
+	sta     $2006
+;
+; PPUADDR = 0xC0;
+;
+	lda     #$C0
+	sta     $2006
+;
+; for (i = 0; i < 64u; ++i) {
+;
+	ldy     #$00
+	tya
+	sta     (c_sp),y
+	iny
+	sta     (c_sp),y
+L0007:	ldy     #$01
+	lda     (c_sp),y
+	cmp     #$00
+	bne     L000B
+	dey
+	lda     (c_sp),y
+	cmp     #$40
+L000B:	bcs     L0008
+;
+; PPUDATA = 0;
+;
+	lda     #$00
+	sta     $2007
+;
+; for (i = 0; i < 64u; ++i) {
+;
+	tax
+	lda     #$01
+	jsr     addeq0sp
+	jmp     L0007
+;
+; }
+;
+L0008:	jmp     incsp2
+
+.endproc
+
+; ---------------------------------------------------------------
+; void __near__ ppu_init_palette (unsigned char bg_color)
+; ---------------------------------------------------------------
+
+.segment	"CODE"
+
+.proc	_ppu_init_palette: near
+
+.segment	"CODE"
+
+;
+; static void ppu_init_palette(uint8_t bg_color) {
+;
+	jsr     pusha
+;
+; PPUADDR = 0x3F;
+;
+	jsr     decsp1
+	lda     #$3F
+	sta     $2006
+;
+; PPUADDR = 0x00;
+;
+	lda     #$00
+	sta     $2006
+;
+; PPUDATA = bg_color;
+;
+	ldy     #$01
+	lda     (c_sp),y
+	sta     $2007
+;
+; PPUDATA = 0x01;  /* dark blue */
+;
+	sty     $2007
+;
+; PPUDATA = 0x11;  /* medium blue */
+;
+	lda     #$11
+	sta     $2007
+;
+; PPUDATA = 0x21;  /* light blue */
+;
+	lda     #$21
+	sta     $2007
+;
+; for (i = 0; i < 12u; ++i) {
+;
+	lda     #$00
+	dey
+L0006:	sta     (c_sp),y
+	cmp     #$0C
+	bcs     L0003
+;
+; PPUDATA = 0x00;
+;
+	lda     #$00
+	sta     $2007
+;
+; for (i = 0; i < 12u; ++i) {
+;
+	clc
+	lda     #$01
+	adc     (c_sp),y
+	jmp     L0006
+;
+; }
+;
+L0003:	jmp     incsp2
 
 .endproc
 
@@ -67,33 +256,89 @@ L0009:	lda     $2002
 
 .segment	"CODE"
 
+;
+; color = 0;  /* start from color 0 */
+;
 	jsr     decsp1
 	lda     #$00
-	sta     $2005
-	sta     $2005
-	lda     #$80
+	tay
+	sta     (c_sp),y
+;
+; wait_vblank();
+;
+	jsr     _wait_vblank
+;
+; ppu_clear_nametable();
+;
+	jsr     _ppu_clear_nametable
+;
+; ppu_init_palette(0x0F);
+;
+	lda     #$0F
+	jsr     _ppu_init_palette
+;
+; PPUCTRL = 0x00;    /* base nametable 0, no NMI */
+;
+	lda     #$00
 	sta     $2000
-	lda     #$1E
+;
+; PPUMASK = 0x08;    /* show background, no sprites */
+;
+	lda     #$08
 	sta     $2001
+;
+; for (i=0; i < 10; ++i){
+;
+L0005:	jsr     decsp1
 	lda     #$00
 	tay
-L0007:	sta     (c_sp),y
-L0005:	jsr     _wait_vblank
-	ldx     #$3F
-	lda     #$00
-	jsr     pushax
-	ldy     #$02
-	lda     (c_sp),y
-	jsr     _ppu_write16
+L000B:	sta     (c_sp),y
+	cmp     #$0A
+	bcs     L0007
+;
+; wait_vblank();
+;
+	jsr     _wait_vblank
+;
+; for (i=0; i < 10; ++i){
+;
 	ldy     #$00
 	clc
 	lda     #$01
 	adc     (c_sp),y
-	sta     (c_sp),y
-	cmp     #$40
-	bcc     L0005
+	jmp     L000B
+;
+; ppu_write(0x3F00, color);
+;
+L0007:	ldx     #$3F
 	tya
-	jmp     L0007
+	jsr     pushax
+	ldy     #$03
+	lda     (c_sp),y
+	jsr     _ppu_write
+;
+; ++color;
+;
+	ldy     #$01
+	clc
+	tya
+	adc     (c_sp),y
+	sta     (c_sp),y
+;
+; if (color >= 0x40) {
+;
+	cmp     #$40
+	bcc     L000A
+;
+; color = 0;
+;
+	lda     #$00
+	sta     (c_sp),y
+;
+; }
+;
+L000A:	jsr     incsp1
+	jmp     L0005
 
 .endproc
 

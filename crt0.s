@@ -1,70 +1,98 @@
-; crt0.s — minimal startup for cc65 + NES (NROM-256, CHR-RAM)
-.export _nmi, _reset, _irq
-.import _main
+; crt0.s — minimal cc65 NES startup (NROM-256, CHR-ROM)
+;
+; - Uses standard cc65 NES memory layout from nes.cfg
+; - Initializes C runtime (BSS/DATA, constructors)
+; - Does minimal NES hardware init, then jumps to C main()
+;
+; Assemble with:   ca65 -t nes crt0.s
 
-.segment "HEADER"
-  .byte $4E,$45,$53,$1A   ; "NES"+$1A
-  .byte $02               ; 2 x 16KB PRG
-  .byte $00               ; 0 CHR (CHR-RAM)
-  .byte $00               ; flags6: mapper 0, H mirror
-  .byte $00               ; flags7
-  .byte $00,$00,$00,$00,$00,$00,$00,$00
+        .export _nmi, _reset, _irq
+        .export __STARTUP__ : absolute = 1
+
+        .import _main
+        .import __RAM_START__, __RAM_SIZE__
+        .import zerobss, copydata, initlib, donelib
+
+        .importzp c_sp
 
 PPUCTRL   = $2000
 PPUMASK   = $2001
 PPUSTATUS = $2002
 APUFC     = $4017
-APUDMC    = $4010
+DMCCTRL   = $4010
 
-.import _main
-.export _nmi, _reset, _irq
+;--------------------------------------------------------------
+; iNES header (32KB PRG, 8KB CHR, mapper 0, H-mirror)
+;--------------------------------------------------------------
+.segment "HEADER"
+        .byte $4E,$45,$53,$1A   ; "NES"+$1A
+        .byte $02               ; 2 x 16KB PRG = 32KB
+        .byte $01               ; 1 x 8KB CHR
+        .byte $00               ; mapper 0, horizontal mirroring
+        .byte $00               ; no battery, no trainer, mapper high nibble = 0
+        .byte $00,$00,$00,$00,$00,$00,$00,$00
 
+;--------------------------------------------------------------
+; Reset / startup
+;--------------------------------------------------------------
 .segment "STARTUP"
+
 _reset:
-  sei
-  cld
-  ldx #$40
-  stx APUFC
-  ldx #$FF
-  txs
-  ldx #$00
-  stx PPUCTRL
-  stx PPUMASK
-  stx APUDMC
-  bit PPUSTATUS
-@v1: bit PPUSTATUS
-  bpl @v1
-@v2: bit PPUSTATUS
-  bpl @v2
+        sei                     ; disable IRQ
+        cld                     ; clear decimal mode
 
-  ; clear $0000-$07FF
-  ldx #$00
-  txa
-@clr:
-  sta $0000,x
-  sta $0100,x
-  sta $0200,x
-  sta $0300,x
-  sta $0400,x
-  sta $0500,x
-  sta $0600,x
-  sta $0700,x
-  inx
-  bne @clr
+        ; Disable APU frame IRQ and DMC IRQ
+        lda #$40
+        sta APUFC
+        lda #$00
+        sta DMCCTRL
 
-  jsr _main
-@hang: jmp @hang
+        ; Initialize 6502 hardware stack at $01FF
+        ldx #$FF
+        txs
 
+        ; Turn off NMI and rendering for now
+        lda #$00
+        sta PPUCTRL
+        sta PPUMASK
+
+        ; Wait for first vblank so PPU is ready
+@wait1:
+        bit PPUSTATUS           ; clear vblank flag
+@vblank1:
+        bit PPUSTATUS
+        bpl @vblank1            ; loop until vblank flag set
+
+        ; Set C argument stack pointer at top of RAM ($6000-$7FFF)
+        lda #<(__RAM_START__ + __RAM_SIZE__)
+        sta c_sp
+        lda #>(__RAM_START__ + __RAM_SIZE__)
+        sta c_sp+1
+
+        ; C runtime: clear BSS, copy DATA, run constructors
+        jsr zerobss
+        jsr copydata
+        jsr initlib
+
+        ; Call C main()
+        jsr _main
+
+_exit:
+        jsr donelib             ; run destructors (if any)
+@halt:
+        jmp @halt               ; if main returns, just spin
+
+;--------------------------------------------------------------
+; Interrupt stubs (we just ignore IRQ/NMI for now)
+;--------------------------------------------------------------
 _nmi:
-  rti
 _irq:
-  rti
+        rti
 
-.export __STARTUP__ := _reset
-
-
+;--------------------------------------------------------------
+; Vector table (mapped by VECTORS segment in nes.cfg)
+;--------------------------------------------------------------
 .segment "VECTORS"
-  .addr _nmi
-  .addr _reset
-  .addr _irq
-
+        .addr _nmi
+        .addr _reset
+        .addr _irq
