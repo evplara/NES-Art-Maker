@@ -43,6 +43,82 @@ L0009:	lda     $2002
 .endproc
 
 ; ---------------------------------------------------------------
+; unsigned char __near__ read_joy1 (void)
+; ---------------------------------------------------------------
+
+.segment	"CODE"
+
+.proc	_read_joy1: near
+
+.segment	"CODE"
+
+;
+; uint8_t buttons = 0;
+;
+	jsr     decsp1
+	lda     #$00
+	jsr     pusha
+;
+; JOY1 = 1;
+;
+	lda     #$01
+	sta     $4016
+;
+; JOY1 = 0;
+;
+	lda     #$00
+	sta     $4016
+;
+; for (i = 0; i < 8u; ++i) {
+;
+	ldy     #$01
+L0007:	sta     (c_sp),y
+	cmp     #$08
+	bcs     L0003
+;
+; if (JOY1 & 1) {
+;
+	lda     $4016
+	and     #$01
+	beq     L0009
+;
+; buttons |= (1u << i);
+;
+	ldy     #$00
+	lda     (c_sp),y
+	sta     ptr1
+	iny
+	lda     (c_sp),y
+	tay
+	lda     #$01
+L000A:	asl     a
+	dey
+	bpl     L000A
+	ror     a
+	ora     ptr1
+	ldy     #$00
+	sta     (c_sp),y
+;
+; for (i = 0; i < 8u; ++i) {
+;
+	iny
+L0009:	clc
+	lda     #$01
+	adc     (c_sp),y
+	jmp     L0007
+;
+; return buttons;
+;
+L0003:	ldx     #$00
+	lda     (c_sp,x)
+;
+; }
+;
+	jmp     incsp2
+
+.endproc
+
+; ---------------------------------------------------------------
 ; void __near__ ppu_write (unsigned int addr, unsigned char value)
 ; ---------------------------------------------------------------
 
@@ -257,11 +333,23 @@ L0003:	jmp     incsp2
 .segment	"CODE"
 
 ;
+; uint8_t color = 0;
+;
+	lda     #$00
+	jsr     pusha
+;
+; uint8_t prev_buttons = 0;
+;
+	jsr     pusha
+;
+; wait_vblank();
+;
+	jsr     _wait_vblank
+;
 ; color = 0;  /* start from color 0 */
 ;
-	jsr     decsp1
 	lda     #$00
-	tay
+	ldy     #$01
 	sta     (c_sp),y
 ;
 ; wait_vblank();
@@ -287,41 +375,31 @@ L0003:	jmp     incsp2
 	lda     #$08
 	sta     $2001
 ;
-; for (i=0; i < 10; ++i){
-;
-L0005:	jsr     decsp1
-	lda     #$00
-	tay
-L000B:	sta     (c_sp),y
-	cmp     #$0A
-	bcs     L0007
-;
 ; wait_vblank();
 ;
+L0005:	jsr     decsp1
 	jsr     _wait_vblank
 ;
-; for (i=0; i < 10; ++i){
+; buttons = read_joy1();
 ;
+	jsr     _read_joy1
 	ldy     #$00
-	clc
-	lda     #$01
-	adc     (c_sp),y
-	jmp     L000B
+	sta     (c_sp),y
 ;
-; ppu_write(0x3F00, color);
+; if ((buttons & 0x01u) && !(prev_buttons & 0x01u)) {
 ;
-L0007:	ldx     #$3F
-	tya
-	jsr     pushax
-	ldy     #$03
+	and     #$01
+	beq     L000E
+	iny
 	lda     (c_sp),y
-	jsr     _ppu_write
+	and     #$01
+	bne     L0006
 ;
 ; ++color;
 ;
-	ldy     #$01
+	iny
 	clc
-	tya
+	lda     #$01
 	adc     (c_sp),y
 	sta     (c_sp),y
 ;
@@ -335,9 +413,25 @@ L0007:	ldx     #$3F
 	lda     #$00
 	sta     (c_sp),y
 ;
+; ppu_write(0x3F00, color);
+;
+L000A:	ldx     #$3F
+	lda     #$00
+	jsr     pushax
+	ldy     #$04
+	lda     (c_sp),y
+	jsr     _ppu_write
+;
+; prev_buttons = buttons;
+;
+L0006:	ldy     #$00
+L000E:	lda     (c_sp),y
+	iny
+	sta     (c_sp),y
+;
 ; }
 ;
-L000A:	jsr     incsp1
+	jsr     incsp1
 	jmp     L0005
 
 .endproc

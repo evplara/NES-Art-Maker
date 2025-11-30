@@ -11,6 +11,8 @@
 #define PPUSCROLL (*(volatile uint8_t*)0x2005)
 #define PPUADDR   (*(volatile uint8_t*)0x2006)
 #define PPUDATA   (*(volatile uint8_t*)0x2007)
+#define JOY1 (*(volatile uint8_t*)0x4016)
+
 
 /* Wait for the start of vblank.
    Pattern from cc65 docs: poll PPUSTATUS bit 7. */
@@ -24,6 +26,25 @@ static void wait_vblank(void) {
         /* spin */
     }
 }
+
+static uint8_t read_joy1(void) {
+    uint8_t i;
+    uint8_t buttons = 0;
+
+    /* Strobe: latch buttons into shift register */
+    JOY1 = 1;
+    JOY1 = 0;
+
+    for (i = 0; i < 8u; ++i) {
+        /* Read bit 0 for this button */
+        if (JOY1 & 1) {
+            buttons |= (1u << i);
+        }
+    }
+
+    return buttons;
+}
+
 
 /* Write a single byte to PPU VRAM at a 16-bit address.
    Must be called only just after a PPUSTATUS read (wait_vblank). */
@@ -77,7 +98,10 @@ static void ppu_init_palette(uint8_t bg_color) {
 
 /* Entry point called by crt0.s */
 void main(void) {
-    uint8_t color;
+    uint8_t color = 0;
+    uint8_t prev_buttons = 0;
+
+    wait_vblank();
 
     color = 0;  /* start from color 0 */
 
@@ -96,16 +120,23 @@ void main(void) {
 
     /* Main loop: cycle universal background color at $3F00 */
     for (;;) {
+        uint8_t buttons;
         /* Wait for start of vblank so VRAM writes are safe */
         wait_vblank();
 
-        /* Write new backdrop color into $3F00 */
-        ppu_write(0x3F00, color);
+        buttons = read_joy1();
 
-        /* Cycle through 64 palette entries (0x00–0x3F) */
-        ++color;
-        if (color >= 0x40) {
-            color = 0;
+        if ((buttons & 0x01u) && !(prev_buttons & 0x01u)) {
+
+            /* Cycle through 64 palette entries (0x00–0x3F) */
+            ++color;
+            if (color >= 0x40) {
+                color = 0;
+            }
+            /* Write new backdrop color into $3F00 */
+            ppu_write(0x3F00, color);
         }
+        /* Remember state for next frame */
+        prev_buttons = buttons;
     }
 }
