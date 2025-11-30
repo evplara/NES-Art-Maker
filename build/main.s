@@ -14,9 +14,14 @@
 	.import		_ppu_wait_vblank
 	.import		_ppu_init
 	.import		_ppu_load_bg_palette
+	.import		_ppu_clear_oam
+	.import		_ppu_draw_cursor_sprite
 	.import		_input_update
-	.import		_canvas_fill_demo_pattern
+	.import		_input_pressed
+	.import		_canvas_clear
+	.import		_canvas_set_pixel
 	.import		_canvas_render_full
+	.import		_canvas_render_tile
 	.export		_main
 
 .segment	"RODATA"
@@ -50,6 +55,25 @@ _s_bg_palette:
 .segment	"CODE"
 
 ;
+; cursor_x = CANVAS_WIDTH  / 2;
+;
+	jsr     decsp3
+	lda     #$10
+	ldy     #$02
+	sta     (c_sp),y
+;
+; cursor_y = CANVAS_HEIGHT / 2;
+;
+	lda     #$0F
+	dey
+	sta     (c_sp),y
+;
+; current_color = 1;
+;
+	tya
+	dey
+	sta     (c_sp),y
+;
 ; ppu_init();
 ;
 	jsr     _ppu_init
@@ -66,29 +90,224 @@ _s_bg_palette:
 	lda     #$10
 	jsr     _ppu_load_bg_palette
 ;
-; canvas_fill_demo_pattern();
+; canvas_clear(0);
 ;
-	jsr     _canvas_fill_demo_pattern
-;
-; ppu_wait_vblank();
-;
-	jsr     _ppu_wait_vblank
+	lda     #$00
+	jsr     _canvas_clear
 ;
 ; canvas_render_full();
 ;
 	jsr     _canvas_render_full
 ;
+; ppu_clear_oam();
+;
+	jsr     _ppu_clear_oam
+;
+; uint8_t sprite_x = (uint8_t)(cursor_x * 8u);
+;
+	ldy     #$02
+	lda     (c_sp),y
+	asl     a
+	asl     a
+	asl     a
+	jsr     pusha
+;
+; uint8_t sprite_y = (uint8_t)(cursor_y * 8u + 1u);
+;
+	ldy     #$02
+	lda     (c_sp),y
+	asl     a
+	asl     a
+	asl     a
+	clc
+	adc     #$01
+	jsr     pusha
+;
+; ppu_draw_cursor_sprite(3, sprite_x, sprite_y);
+;
+	jsr     decsp2
+	lda     #$03
+	ldy     #$01
+	sta     (c_sp),y
+	tay
+	lda     (c_sp),y
+	ldy     #$00
+	sta     (c_sp),y
+	ldy     #$02
+	lda     (c_sp),y
+	jsr     _ppu_draw_cursor_sprite
+;
+; }
+;
+	jsr     incsp2
+;
+; PPUCTRL = 0x00;
+;
+	lda     #$00
+	sta     $2000
+;
+; PPUMASK = 0x18;   /* bit3=BG, bit4=sprites */
+;
+	lda     #$18
+	sta     $2001
+;
 ; ppu_wait_vblank();
 ;
-L0005:	jsr     _ppu_wait_vblank
+L0006:	jsr     decsp2
+	jsr     _ppu_wait_vblank
 ;
 ; input_update();
 ;
 	jsr     _input_update
 ;
+; if (input_pressed(BTN_LEFT)) {
+;
+	lda     #$40
+	jsr     _input_pressed
+	tax
+	beq     L0011
+;
+; if (cursor_x > 0) cursor_x--;
+;
+	ldy     #$04
+	lda     (c_sp),y
+	beq     L0011
+	sec
+	sbc     #$01
+	sta     (c_sp),y
+;
+; if (input_pressed(BTN_RIGHT)) {
+;
+L0011:	lda     #$80
+	jsr     _input_pressed
+	tax
+	beq     L0012
+;
+; if (cursor_x < (CANVAS_WIDTH - 1u)) cursor_x++;
+;
+	ldy     #$04
+	lda     (c_sp),y
+	cmp     #$1F
+	bcs     L0012
+	clc
+	lda     #$01
+	adc     (c_sp),y
+	sta     (c_sp),y
+;
+; if (input_pressed(BTN_UP)) {
+;
+L0012:	lda     #$10
+	jsr     _input_pressed
+	tax
+	beq     L0013
+;
+; if (cursor_y > 0) cursor_y--;
+;
+	ldy     #$03
+	lda     (c_sp),y
+	beq     L0013
+	sec
+	sbc     #$01
+	sta     (c_sp),y
+;
+; if (input_pressed(BTN_DOWN)) {
+;
+L0013:	lda     #$20
+	jsr     _input_pressed
+	tax
+	beq     L0014
+;
+; if (cursor_y < (CANVAS_HEIGHT - 1u)) cursor_y++;
+;
+	ldy     #$03
+	lda     (c_sp),y
+	cmp     #$1D
+	bcs     L0014
+	clc
+	lda     #$01
+	adc     (c_sp),y
+	sta     (c_sp),y
+;
+; if (input_pressed(BTN_A)) {
+;
+L0014:	lda     #$01
+	jsr     _input_pressed
+	tax
+	beq     L0016
+;
+; canvas_set_pixel(cursor_x, cursor_y, current_color);
+;
+	jsr     decsp2
+	ldy     #$06
+	lda     (c_sp),y
+	ldy     #$01
+	sta     (c_sp),y
+	ldy     #$05
+	lda     (c_sp),y
+	ldy     #$00
+	sta     (c_sp),y
+	ldy     #$04
+	lda     (c_sp),y
+	jsr     _canvas_set_pixel
+;
+; canvas_render_tile(cursor_x, cursor_y);
+;
+	ldy     #$04
+	lda     (c_sp),y
+	jsr     pusha
+	ldy     #$04
+	lda     (c_sp),y
+	jsr     _canvas_render_tile
+;
+; PPUSCROLL = 0;
+;
+	lda     #$00
+L0016:	sta     $2005
+;
+; PPUSCROLL = 0;
+;
+	sta     $2005
+;
+; sprite_x = (uint8_t)(cursor_x * 8u);
+;
+	ldy     #$04
+	lda     (c_sp),y
+	asl     a
+	asl     a
+	asl     a
+	ldy     #$01
+	sta     (c_sp),y
+;
+; sprite_y = (uint8_t)(cursor_y * 8u + 1u);
+;
+	ldy     #$03
+	lda     (c_sp),y
+	asl     a
+	asl     a
+	asl     a
+	clc
+	adc     #$01
+	ldy     #$00
+	sta     (c_sp),y
+;
+; ppu_draw_cursor_sprite(3, sprite_x, sprite_y);
+;
+	jsr     decsp2
+	lda     #$03
+	iny
+	sta     (c_sp),y
+	tay
+	lda     (c_sp),y
+	ldy     #$00
+	sta     (c_sp),y
+	ldy     #$02
+	lda     (c_sp),y
+	jsr     _ppu_draw_cursor_sprite
+;
 ; }
 ;
-	jmp     L0005
+	jsr     incsp2
+	jmp     L0006
 
 .endproc
 

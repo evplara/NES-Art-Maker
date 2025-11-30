@@ -17,19 +17,18 @@ void ppu_wait_vblank(void) {
 
 /* Minimal PPU setup: background only, no NMI, scroll at (0,0). */
 void ppu_init(void) {
-    /* Sync with PPU so we don't write during startup garbage. */
+    /* Sync with PPU first */
     ppu_wait_vblank();
+
+    /* Turn rendering off while we set things up. */
+    PPUCTRL = 0x00;
+    PPUMASK = 0x00;
 
     /* Reset scroll */
     PPUSCROLL = 0;
     PPUSCROLL = 0;
-
-    /* Base nametable 0, no NMI (we're polling vblank manually). */
-    PPUCTRL = 0x00;
-
-    /* Show background, hide sprites for now. */
-    PPUMASK = 0x08;
 }
+
 
 void ppu_write_vram(uint16_t addr, uint8_t value) {
     PPUADDR = (uint8_t)(addr >> 8);
@@ -59,4 +58,28 @@ void ppu_load_bg_palette(const uint8_t* data, uint8_t count) {
     for (i = 0; i < count; ++i) {
         PPUDATA = data[i];
     }
+}
+
+void ppu_clear_oam(void) {
+    uint8_t i;
+
+    /* Clear all 64 sprites: put them off-screen. */
+    OAMADDR = 0;
+    for (i = 0; i < 64u; ++i) {
+        OAMDATA = 0xFF;  /* Y = 255 -> hidden */
+        OAMDATA = 0x00;  /* tile */
+        OAMDATA = 0x00;  /* attributes */
+        OAMDATA = 0x00;  /* X */
+    }
+}
+
+/* Draw cursor as sprite #0 using given tile and screen coordinates. */
+void ppu_draw_cursor_sprite(uint8_t tile, uint8_t x, uint8_t y) {
+    /* NES sprites use Y coordinate as (top - 1), but we’ll pass in
+       the value we want and just use it directly for now. */
+    OAMADDR = 0;      /* sprite 0 */
+    OAMDATA = y;      /* Y position */
+    OAMDATA = tile;   /* tile index */
+    OAMDATA = 0x00;   /* attributes: palette 0, no flip */
+    OAMDATA = x;      /* X position */
 }

@@ -13,7 +13,9 @@
 	.export		_g_canvas
 	.export		_canvas_clear
 	.export		_canvas_fill_demo_pattern
+	.export		_canvas_set_pixel
 	.export		_canvas_render_full
+	.export		_canvas_render_tile
 
 .segment	"BSS"
 
@@ -187,6 +189,65 @@ L0003:	jmp     incsp2
 .endproc
 
 ; ---------------------------------------------------------------
+; void __near__ canvas_set_pixel (unsigned char x, unsigned char y, unsigned char color)
+; ---------------------------------------------------------------
+
+.segment	"CODE"
+
+.proc	_canvas_set_pixel: near
+
+.segment	"CODE"
+
+;
+; void canvas_set_pixel(uint8_t x, uint8_t y, uint8_t color) {
+;
+	jsr     pusha
+;
+; if (x < CANVAS_WIDTH && y < CANVAS_HEIGHT) {
+;
+	ldy     #$02
+	lda     (c_sp),y
+	cmp     #$20
+	bcs     L0002
+	dey
+	lda     (c_sp),y
+	cmp     #$1E
+	bcs     L0002
+;
+; g_canvas[y][x] = color;
+;
+	ldx     #$00
+	lda     (c_sp),y
+	jsr     aslax4
+	stx     tmp1
+	asl     a
+	rol     tmp1
+	clc
+	adc     #<(_g_canvas)
+	sta     ptr1
+	lda     tmp1
+	adc     #>(_g_canvas)
+	sta     ptr1+1
+	iny
+	lda     (c_sp),y
+	clc
+	adc     ptr1
+	ldx     ptr1+1
+	bcc     L0006
+	inx
+L0006:	sta     ptr1
+	stx     ptr1+1
+	ldy     #$00
+	lda     (c_sp),y
+	sta     (ptr1),y
+;
+; }
+;
+L0002:	jmp     incsp3
+
+.endproc
+
+; ---------------------------------------------------------------
 ; void __near__ canvas_render_full (void)
 ; ---------------------------------------------------------------
 
@@ -288,6 +349,94 @@ L0004:	dey
 ; }
 ;
 L0003:	jmp     incsp4
+
+.endproc
+
+; ---------------------------------------------------------------
+; void __near__ canvas_render_tile (unsigned char x, unsigned char y)
+; ---------------------------------------------------------------
+
+.segment	"CODE"
+
+.proc	_canvas_render_tile: near
+
+.segment	"CODE"
+
+;
+; void canvas_render_tile(uint8_t x, uint8_t y) {
+;
+	jsr     pusha
+;
+; if (x >= CANVAS_WIDTH || y >= CANVAS_HEIGHT) {
+;
+	jsr     decsp2
+	ldy     #$03
+	lda     (c_sp),y
+	cmp     #$20
+	bcs     L0001
+	dey
+	lda     (c_sp),y
+	cmp     #$1E
+	bcs     L0001
+	ldx     #$00
+;
+; addr = 0x2000 + (uint16_t)y * 32u + (uint16_t)x;
+;
+	lda     (c_sp),y
+	jsr     shlax4
+	stx     tmp1
+	asl     a
+	rol     tmp1
+	sta     ptr1
+	lda     tmp1
+	clc
+	adc     #$20
+	sta     ptr1+1
+	iny
+	lda     (c_sp),y
+	clc
+	adc     ptr1
+	ldx     ptr1+1
+	bcc     L0005
+	inx
+L0005:	jsr     stax0sp
+;
+; PPUADDR = (uint8_t)(addr >> 8);
+;
+	ldy     #$01
+	lda     (c_sp),y
+	sta     $2006
+;
+; PPUADDR = (uint8_t)(addr & 0xFF);
+;
+	dey
+	lda     (c_sp),y
+	sta     $2006
+;
+; PPUDATA = g_canvas[y][x];   /* tile index == color index (0..3) */
+;
+	ldy     #$02
+	ldx     #$00
+	lda     (c_sp),y
+	jsr     aslax4
+	stx     tmp1
+	asl     a
+	rol     tmp1
+	clc
+	adc     #<(_g_canvas)
+	sta     ptr1
+	lda     tmp1
+	adc     #>(_g_canvas)
+	sta     ptr1+1
+	iny
+	lda     (c_sp),y
+	tay
+	lda     (ptr1),y
+	sta     $2007
+;
+; }
+;
+L0001:	jmp     incsp4
 
 .endproc
 
