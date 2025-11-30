@@ -1,21 +1,56 @@
-OUT = game.nes
+CC65BIN = C:/cc65/bin
 
-CC65 ?= C:/cc65
-LIBDIR := $(CC65)/lib
+CC  = $(CC65BIN)/cc65
+CA  = $(CC65BIN)/ca65
+LD  = $(CC65BIN)/ld65
 
-all: $(OUT)
+SRC_DIR   = src
+INC_DIR   = include
+ASM_DIR   = asm
+CFG_DIR   = cfg
+BUILD_DIR = build
+BIN_DIR   = bin
 
-main.s: main.c
-	cc65 -Oirs -t nes main.c -o main.s
+CFLAGS  = -Oirs -t nes --add-source -I $(INC_DIR)
+AFLAGS  = -t nes
+LDFLAGS = -C $(CFG_DIR)/nes.cfg
 
-main.o: main.s
-	ca65 main.s -o main.o
+C_SOURCES = \
+	$(SRC_DIR)/main.c \
+	$(SRC_DIR)/ppu.c  \
+	$(SRC_DIR)/input.c \
+	$(SRC_DIR)/canvas.c
 
-crt0.o: crt0.s
-	ca65 crt0.s -o crt0.o
+ASM_SOURCES = \
+	$(ASM_DIR)/crt0.s \
+	$(ASM_DIR)/tiles.s
 
-$(OUT): crt0.o main.o nes.cfg
-	cl65 -t nes -C nes.cfg -o $(OUT) crt0.o main.o
+# Derived names in build directory
+C_ASM = $(C_SOURCES:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.s)
+OBJS  = $(C_SOURCES:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o) \
+        $(ASM_SOURCES:$(ASM_DIR)/%.s=$(BUILD_DIR)/%.o)
+
+# Default target
+all: $(BIN_DIR)/game.nes
+
+$(BUILD_DIR):
+	mkdir $(BUILD_DIR)
+
+$(BIN_DIR):
+	mkdir $(BIN_DIR)
+
+$(BUILD_DIR)/%.s: $(SRC_DIR)/%.c | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -o $@ $<
+
+$(BUILD_DIR)/%.o: $(BUILD_DIR)/%.s
+	$(CA) $(AFLAGS) -o $@ $<
+
+$(BUILD_DIR)/%.o: $(ASM_DIR)/%.s | $(BUILD_DIR)
+	$(CA) $(AFLAGS) -o $@ $<
+
+$(BIN_DIR)/game.nes: $(OBJS) $(CFG_DIR)/nes.cfg | $(BIN_DIR)
+	$(LD) $(LDFLAGS) -o $@ $(OBJS) nes.lib
 
 clean:
-	-del /Q main.s *.o $(OUT) 2> NUL
+	-del /Q $(BUILD_DIR)\*.o $(BUILD_DIR)\*.s 2> NUL
+	-del /Q $(BIN_DIR)\game.nes 2> NUL

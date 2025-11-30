@@ -1,0 +1,23 @@
+/* canvas.h - RAM-backed "pixel art" canvas */
+
+#ifndef CANVAS_H
+#define CANVAS_H
+
+#include <stdint.h>
+
+#define CANVAS_WIDTH  32
+#define CANVAS_HEIGHT 30
+
+/* Each entry is a small color index 0..3 for now. */
+extern uint8_t g_canvas[CANVAS_HEIGHT][CANVAS_WIDTH];
+
+/* Clear the entire canvas to one color index. */
+void canvas_clear(uint8_t color);
+
+/* Fill canvas with a demo pattern (for testing the pipeline). */
+void canvas_fill_demo_pattern(void);
+
+/* Upload full canvas to nametable 0 ($2000) as tiles. */
+void canvas_render_full(void);
+
+#endif
