@@ -83,4 +83,3 @@ void ppu_draw_cursor_sprite(uint8_t tile, uint8_t x, uint8_t y) {
     OAMDATA = 0x00;   /* attributes: palette 0, no flip */
     OAMDATA = x;      /* X position */
 }
-

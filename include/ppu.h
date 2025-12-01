@@ -33,5 +33,4 @@ void ppu_load_bg_palette(const uint8_t* data, uint8_t count);
 void ppu_clear_oam(void);
 void ppu_draw_cursor_sprite(uint8_t tile, uint8_t x, uint8_t y);
 
-
 #endif
