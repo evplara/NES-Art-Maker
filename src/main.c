@@ -6,6 +6,30 @@
 #define UI_HIGHLIGHT_ROW    1
 #define UI_FIRST_DRAW_ROW   2
 
+/* Tools*/
+typedef enum {
+    TOOL_BRUSH = 0,
+    TOOL_ERASER,
+    TOOL_LINE,
+    TOOL_RECT,
+    TOOL_FILL,
+    TOOL_COUNT
+} Tool;
+
+#define FILL_QUEUE_MAX (CANVAS_WIDTH * CANVAS_HEIGHT)
+
+typedef struct {
+    uint8_t x;
+    uint8_t y;
+} FillNode;
+
+static FillNode s_fill_queue[FILL_QUEUE_MAX];
+
+/* Globals for tools */
+static Tool    s_current_tool = TOOL_BRUSH;
+static uint8_t s_drag_active = 0;
+static uint8_t s_drag_start_x = 0;
+static uint8_t s_drag_start_y = 0;
 
 /* Background palette:
  * palette 0: universal + three colors used by tiles 1-3.
@@ -17,24 +41,77 @@ static const uint8_t s_bg_palette[16] = {
     0x0F, 0x0A, 0x1A, 0x2A    /* palette 3 (unused) */
 };
 
+/* Background palette */
+static const uint8_t s_bg_palette[16] = {
+    0x0F, 0x01, 0x11, 0x21,   /* palette 0: background + 3 blues */
+    0x0F, 0x06, 0x16, 0x26,   /* palette 1 (unused) - reds */
+    0x0F, 0x09, 0x19, 0x29,   /* palette 2 (unused) - greens */
+    0x0F, 0x0A, 0x1A, 0x2A    /* palette 3 (unused) */
+};
+
+/* Palette bar at top:
+   - row 0, x=0..3: swatches 0..3
+   - row 1, x=0..3: highlight under current_color
+*/
 static void ui_update_palette_bar(uint8_t current_color) {
     uint8_t x;
 
-    /* Row 0: color swatches 0..3 */
+    /* Row 0: swatches */
     for (x = 0; x < 4u; ++x) {
-        g_canvas[UI_PALETTE_ROW][x] = x;        /* tile index 0..3 */
-        canvas_render_tile(x, UI_PALETTE_ROW);  /* push to VRAM */
+        g_canvas[UI_PALETTE_ROW][x] = x;            /* tile 0..3 */
+        canvas_render_tile(x, UI_PALETTE_ROW);
     }
 
-    /* Row 1: highlight row, clear all, then color under current_color */
+    /* Row 1: clear highlight row */
     for (x = 0; x < 4u; ++x) {
         g_canvas[UI_HIGHLIGHT_ROW][x] = 0;
         canvas_render_tile(x, UI_HIGHLIGHT_ROW);
     }
 
-    /* Highlight under selected brush color */
+    /* Highlight under current_color */
     g_canvas[UI_HIGHLIGHT_ROW][current_color] = current_color;
     canvas_render_tile(current_color, UI_HIGHLIGHT_ROW);
+}
+
+/* Simple tool indicator in row 1, columns 6..9.
+   Different color patterns for each tool (use less CHR tiles, no need for text sprites):
+   - Brush: all tile 1 (blue)
+   - Eraser: all tile 0 (black)
+   - Line: all tile 2 (mid blue)
+   - Rect: all tile 3 (light blue)
+   - Fill: pattern 1,0,1,0
+*/
+static void ui_update_tool_indicator(Tool tool) {
+    uint8_t x;
+    uint8_t pattern[4];
+
+    switch (tool) {
+        case TOOL_BRUSH:
+            pattern[0] = pattern[1] = pattern[2] = pattern[3] = 1;
+            break;
+        case TOOL_ERASER:
+            pattern[0] = pattern[1] = pattern[2] = pattern[3] = 0;
+            break;
+        case TOOL_LINE:
+            pattern[0] = pattern[1] = pattern[2] = pattern[3] = 2;
+            break;
+        case TOOL_RECT:
+            pattern[0] = pattern[1] = pattern[2] = pattern[3] = 3;
+            break;
+        case TOOL_FILL:
+        default:
+            pattern[0] = 1;
+            pattern[1] = 0;
+            pattern[2] = 1;
+            pattern[3] = 0;
+            break;
+    }
+
+    for (x = 0; x < 4u; ++x) {
+        uint8_t cx = (uint8_t)(6u + x);
+        g_canvas[UI_HIGHLIGHT_ROW][cx] = pattern[x];
+        canvas_render_tile(cx, UI_HIGHLIGHT_ROW);
+    }
 }
 
 void main(void) {
