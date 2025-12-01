@@ -18,6 +18,7 @@
 	.import		_ppu_draw_cursor_sprite
 	.import		_input_update
 	.import		_input_pressed
+	.import		_g_canvas
 	.import		_canvas_clear
 	.import		_canvas_set_pixel
 	.import		_canvas_render_full
@@ -45,6 +46,103 @@ _s_bg_palette:
 	.byte	$2A
 
 ; ---------------------------------------------------------------
+; void __near__ ui_update_palette_bar (unsigned char current_color)
+; ---------------------------------------------------------------
+
+.segment	"CODE"
+
+.proc	_ui_update_palette_bar: near
+
+.segment	"CODE"
+
+;
+; static void ui_update_palette_bar(uint8_t current_color) {
+;
+	jsr     pusha
+;
+; for (x = 0; x < 4u; ++x) {
+;
+	jsr     decsp1
+	lda     #$00
+	tay
+L000D:	sta     (c_sp),y
+	cmp     #$04
+	bcs     L000F
+;
+; g_canvas[UI_PALETTE_ROW][x] = x;        /* tile index 0..3 */
+;
+	lda     (c_sp),y
+	tax
+	lda     (c_sp),y
+	sta     _g_canvas,x
+;
+; canvas_render_tile(x, UI_PALETTE_ROW);  /* push to VRAM */
+;
+	lda     (c_sp),y
+	jsr     pusha
+	lda     #$00
+	jsr     _canvas_render_tile
+;
+; for (x = 0; x < 4u; ++x) {
+;
+	ldy     #$00
+	clc
+	lda     #$01
+	adc     (c_sp),y
+	jmp     L000D
+;
+; for (x = 0; x < 4u; ++x) {
+;
+L000F:	tya
+L000E:	sta     (c_sp),y
+	cmp     #$04
+	bcs     L0008
+;
+; g_canvas[UI_HIGHLIGHT_ROW][x] = 0;
+;
+	lda     (c_sp),y
+	tay
+	lda     #$00
+	sta     _g_canvas+32,y
+;
+; canvas_render_tile(x, UI_HIGHLIGHT_ROW);
+;
+	tay
+	lda     (c_sp),y
+	jsr     pusha
+	lda     #$01
+	jsr     _canvas_render_tile
+;
+; for (x = 0; x < 4u; ++x) {
+;
+	ldy     #$00
+	clc
+	lda     #$01
+	adc     (c_sp),y
+	jmp     L000E
+;
+; g_canvas[UI_HIGHLIGHT_ROW][current_color] = current_color;
+;
+L0008:	iny
+	lda     (c_sp),y
+	tax
+	lda     (c_sp),y
+	sta     _g_canvas+32,x
+;
+; canvas_render_tile(current_color, UI_HIGHLIGHT_ROW);
+;
+	lda     (c_sp),y
+	jsr     pusha
+	lda     #$01
+	jsr     _canvas_render_tile
+;
+; }
+;
+	jmp     incsp2
+
+.endproc
+
+; ---------------------------------------------------------------
 ; void __near__ main (void)
 ; ---------------------------------------------------------------
 
@@ -62,9 +160,8 @@ _s_bg_palette:
 	ldy     #$02
 	sta     (c_sp),y
 ;
-; cursor_y = CANVAS_HEIGHT / 2;
+; cursor_y = (CANVAS_HEIGHT + UI_FIRST_DRAW_ROW) / 2;
 ;
-	lda     #$0F
 	dey
 	sta     (c_sp),y
 ;
@@ -94,6 +191,16 @@ _s_bg_palette:
 ;
 	lda     #$00
 	jsr     _canvas_clear
+;
+; current_color = 1;
+;
+	lda     #$01
+	ldy     #$00
+	sta     (c_sp),y
+;
+; ui_update_palette_bar(current_color);
+;
+	jsr     _ui_update_palette_bar
 ;
 ; canvas_render_full();
 ;
@@ -165,30 +272,30 @@ L0006:	jsr     decsp2
 	lda     #$40
 	jsr     _input_pressed
 	tax
-	beq     L0011
+	beq     L0014
 ;
 ; if (cursor_x > 0) cursor_x--;
 ;
 	ldy     #$04
 	lda     (c_sp),y
-	beq     L0011
+	beq     L0014
 	sec
 	sbc     #$01
 	sta     (c_sp),y
 ;
 ; if (input_pressed(BTN_RIGHT)) {
 ;
-L0011:	lda     #$80
+L0014:	lda     #$80
 	jsr     _input_pressed
 	tax
-	beq     L0012
+	beq     L0015
 ;
 ; if (cursor_x < (CANVAS_WIDTH - 1u)) cursor_x++;
 ;
 	ldy     #$04
 	lda     (c_sp),y
 	cmp     #$1F
-	bcs     L0012
+	bcs     L0015
 	clc
 	lda     #$01
 	adc     (c_sp),y
@@ -196,44 +303,75 @@ L0011:	lda     #$80
 ;
 ; if (input_pressed(BTN_UP)) {
 ;
-L0012:	lda     #$10
+L0015:	lda     #$10
 	jsr     _input_pressed
 	tax
-	beq     L0013
+	beq     L0016
 ;
-; if (cursor_y > 0) cursor_y--;
+; if (cursor_y > UI_FIRST_DRAW_ROW) cursor_y--;
 ;
 	ldy     #$03
 	lda     (c_sp),y
-	beq     L0013
+	cmp     #$03
+	bcc     L0016
 	sec
 	sbc     #$01
 	sta     (c_sp),y
 ;
 ; if (input_pressed(BTN_DOWN)) {
 ;
-L0013:	lda     #$20
+L0016:	lda     #$20
 	jsr     _input_pressed
 	tax
-	beq     L0014
+	beq     L0017
 ;
 ; if (cursor_y < (CANVAS_HEIGHT - 1u)) cursor_y++;
 ;
 	ldy     #$03
 	lda     (c_sp),y
 	cmp     #$1D
-	bcs     L0014
+	bcs     L0017
 	clc
 	lda     #$01
 	adc     (c_sp),y
 	sta     (c_sp),y
 ;
-; if (input_pressed(BTN_A)) {
+; if (input_pressed(BTN_SELECT)) {
 ;
-L0014:	lda     #$01
+L0017:	lda     #$04
 	jsr     _input_pressed
 	tax
-	beq     L0016
+	beq     L001A
+;
+; current_color++;
+;
+	ldy     #$02
+	clc
+	lda     #$01
+	adc     (c_sp),y
+	sta     (c_sp),y
+;
+; if (current_color > 3u) {
+;
+	cmp     #$04
+	bcc     L0019
+;
+; current_color = 1u;   /* wrap around */
+;
+	lda     #$01
+	sta     (c_sp),y
+;
+; ui_update_palette_bar(current_color);
+;
+L0019:	lda     (c_sp),y
+	jsr     _ui_update_palette_bar
+;
+; if (input_pressed(BTN_A)) {
+;
+L001A:	lda     #$01
+	jsr     _input_pressed
+	tax
+	beq     L001B
 ;
 ; canvas_set_pixel(cursor_x, cursor_y, current_color);
 ;
@@ -259,10 +397,40 @@ L0014:	lda     #$01
 	lda     (c_sp),y
 	jsr     _canvas_render_tile
 ;
+; if (input_pressed(BTN_B)) {
+;
+L001B:	lda     #$02
+	jsr     _input_pressed
+	tax
+	beq     L001D
+;
+; canvas_set_pixel(cursor_x, cursor_y, 0);
+;
+	jsr     decsp2
+	ldy     #$06
+	lda     (c_sp),y
+	ldy     #$01
+	sta     (c_sp),y
+	ldy     #$05
+	lda     (c_sp),y
+	ldy     #$00
+	sta     (c_sp),y
+	tya
+	jsr     _canvas_set_pixel
+;
+; canvas_render_tile(cursor_x, cursor_y);
+;
+	ldy     #$04
+	lda     (c_sp),y
+	jsr     pusha
+	ldy     #$04
+	lda     (c_sp),y
+	jsr     _canvas_render_tile
+;
 ; PPUSCROLL = 0;
 ;
 	lda     #$00
-L0016:	sta     $2005
+L001D:	sta     $2005
 ;
 ; PPUSCROLL = 0;
 ;

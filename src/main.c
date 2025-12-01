@@ -2,6 +2,10 @@
 #include "ppu.h"
 #include "input.h"
 #include "canvas.h"
+#define UI_PALETTE_ROW      0
+#define UI_HIGHLIGHT_ROW    1
+#define UI_FIRST_DRAW_ROW   2
+
 
 /* Background palette:
  * palette 0: universal + three colors used by tiles 1-3.
@@ -13,6 +17,26 @@ static const uint8_t s_bg_palette[16] = {
     0x0F, 0x0A, 0x1A, 0x2A    /* palette 3 (unused) */
 };
 
+static void ui_update_palette_bar(uint8_t current_color) {
+    uint8_t x;
+
+    /* Row 0: color swatches 0..3 */
+    for (x = 0; x < 4u; ++x) {
+        g_canvas[UI_PALETTE_ROW][x] = x;        /* tile index 0..3 */
+        canvas_render_tile(x, UI_PALETTE_ROW);  /* push to VRAM */
+    }
+
+    /* Row 1: highlight row, clear all, then color under current_color */
+    for (x = 0; x < 4u; ++x) {
+        g_canvas[UI_HIGHLIGHT_ROW][x] = 0;
+        canvas_render_tile(x, UI_HIGHLIGHT_ROW);
+    }
+
+    /* Highlight under selected brush color */
+    g_canvas[UI_HIGHLIGHT_ROW][current_color] = current_color;
+    canvas_render_tile(current_color, UI_HIGHLIGHT_ROW);
+}
+
 void main(void) {
     uint8_t cursor_x;
     uint8_t cursor_y;
@@ -20,23 +44,27 @@ void main(void) {
 
     /* Start cursor in middle of canvas */
     cursor_x = CANVAS_WIDTH  / 2;
-    cursor_y = CANVAS_HEIGHT / 2;
+    cursor_y = (CANVAS_HEIGHT + UI_FIRST_DRAW_ROW) / 2;
 
     /* Default brush color = 1 (uses tile 1) */
     current_color = 1;
 
-    /* 1) Basic PPU init (rendering OFF). */
+    /*  Basic PPU init (rendering OFF). */
     ppu_init();
 
-    /* 2) While rendering is off, set palette and initial canvas. */
+    /* While rendering is off, set palette and initial canvas. */
     ppu_wait_vblank();
     ppu_load_bg_palette(s_bg_palette, 16);
 
     /* Start with a blank canvas (color 0). */
     canvas_clear(0);
+    /* Draw initial palette bar into the canvas (current_color = 1) */
+    current_color = 1;
+    ui_update_palette_bar(current_color);
+
     canvas_render_full();
 
-    /* 3) Clear sprite memory and place initial cursor sprite. */
+    /* Clear sprite memory and place initial cursor sprite. */
     ppu_clear_oam();
 
     {
@@ -46,22 +74,22 @@ void main(void) {
         ppu_draw_cursor_sprite(3, sprite_x, sprite_y);
     }
 
-    /* 4) Turn rendering ON: background + sprites, nametable 0, no NMI. */
+    /* Turn rendering ON: background + sprites, nametable 0, no NMI. */
     PPUCTRL = 0x00;
     PPUMASK = 0x18;   /* bit3=BG, bit4=sprites */
 
-    /* 5) Main loop */
+    /*) Main loop */
     for (;;) {
         uint8_t sprite_x;
         uint8_t sprite_y;
 
-        /* 1) Wait for vblank: safe time for VRAM/OAM */
+        /* Wait for vblank: safe time for VRAM/OAM */
         ppu_wait_vblank();
 
-        /* 2) Poll controller */
+        /* Poll controller */
         input_update();
 
-        /* 3) Cursor movement (same as before) */
+        /* Cursor movement (same as before) */
         if (input_pressed(BTN_LEFT)) {
             if (cursor_x > 0) cursor_x--;
         }
@@ -69,12 +97,13 @@ void main(void) {
             if (cursor_x < (CANVAS_WIDTH - 1u)) cursor_x++;
         }
         if (input_pressed(BTN_UP)) {
-            if (cursor_y > 0) cursor_y--;
+            if (cursor_y > UI_FIRST_DRAW_ROW) cursor_y--;
         }
         if (input_pressed(BTN_DOWN)) {
             if (cursor_y < (CANVAS_HEIGHT - 1u)) cursor_y++;
         }
 
+        /* Color Selection with Select*/
         if (input_pressed(BTN_SELECT)) {
             current_color++;
             if (current_color > 3u) {
@@ -94,12 +123,11 @@ void main(void) {
             canvas_set_pixel(cursor_x, cursor_y, 0);
             canvas_render_tile(cursor_x, cursor_y);
         }
-
-        /* 5) Reset scroll so background always starts at (0,0) */
+        /* Reset scroll so background always starts at (0,0) */
         PPUSCROLL = 0;
         PPUSCROLL = 0;
 
-        /* 6) Update cursor sprite position */
+        /* Update cursor sprite position */
         sprite_x = (uint8_t)(cursor_x * 8u);
         sprite_y = (uint8_t)(cursor_y * 8u + 1u);
         ppu_draw_cursor_sprite(3, sprite_x, sprite_y);
