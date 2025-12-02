@@ -22,5 +22,6 @@ void canvas_set_pixel(uint8_t x, uint8_t y, uint8_t color);
 /* Upload full canvas to nametable 0 ($2000) as tiles. */
 void canvas_render_full(void);
 void canvas_render_tile(uint8_t x, uint8_t y);
+void canvas_render_rows(uint8_t y_start, uint8_t row_count);
 
 #endif

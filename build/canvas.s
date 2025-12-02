@@ -16,6 +16,7 @@
 	.export		_canvas_set_pixel
 	.export		_canvas_render_full
 	.export		_canvas_render_tile
+	.export		_canvas_render_rows
 
 .segment	"BSS"
 
@@ -437,6 +438,147 @@ L0005:	jsr     stax0sp
 ; }
 ;
 L0001:	jmp     incsp4
+
+.endproc
+
+; ---------------------------------------------------------------
+; void __near__ canvas_render_rows (unsigned char y_start, unsigned char row_count)
+; ---------------------------------------------------------------
+
+.segment	"CODE"
+
+.proc	_canvas_render_rows: near
+
+.segment	"CODE"
+
+;
+; void canvas_render_rows(uint8_t y_start, uint8_t row_count) {
+;
+	jsr     pusha
+;
+; uint8_t y_end = (uint8_t)(y_start + row_count);
+;
+	jsr     decsp2
+	ldy     #$02
+	lda     (c_sp),y
+	clc
+	iny
+	adc     (c_sp),y
+	jsr     pusha
+;
+; if (y_start >= CANVAS_HEIGHT) {
+;
+	ldy     #$04
+	lda     (c_sp),y
+	cmp     #$1E
+;
+; return;
+;
+	jcs     L0005
+;
+; if (y_end > CANVAS_HEIGHT) {
+;
+	ldy     #$00
+	lda     (c_sp),y
+	cmp     #$1F
+	bcc     L0003
+;
+; y_end = CANVAS_HEIGHT;
+;
+	lda     #$1E
+	sta     (c_sp),y
+;
+; for (y = y_start; y < y_end; ++y) {
+;
+L0003:	ldy     #$04
+	lda     (c_sp),y
+	ldy     #$02
+L000E:	sta     (c_sp),y
+	ldy     #$00
+	cmp     (c_sp),y
+	bcs     L0005
+;
+; uint16_t addr = 0x2000u + (uint16_t)y * 32u;
+;
+	ldy     #$02
+	ldx     #$00
+	lda     (c_sp),y
+	jsr     shlax4
+	stx     tmp1
+	asl     a
+	rol     tmp1
+	pha
+	lda     tmp1
+	clc
+	adc     #$20
+	tax
+	pla
+	jsr     pushax
+;
+; PPUADDR = (uint8_t)(addr >> 8);
+;
+	ldy     #$01
+	lda     (c_sp),y
+	sta     $2006
+;
+; PPUADDR = (uint8_t)(addr & 0xFF);
+;
+	dey
+	lda     (c_sp),y
+	sta     $2006
+;
+; for (x = 0; x < CANVAS_WIDTH; ++x) {
+;
+	tya
+	ldy     #$03
+L000D:	sta     (c_sp),y
+	cmp     #$20
+	bcs     L0009
+;
+; PPUDATA = g_canvas[y][x];
+;
+	iny
+	ldx     #$00
+	lda     (c_sp),y
+	jsr     aslax4
+	stx     tmp1
+	asl     a
+	rol     tmp1
+	clc
+	adc     #<(_g_canvas)
+	sta     ptr1
+	lda     tmp1
+	adc     #>(_g_canvas)
+	sta     ptr1+1
+	dey
+	lda     (c_sp),y
+	tay
+	lda     (ptr1),y
+	sta     $2007
+;
+; for (x = 0; x < CANVAS_WIDTH; ++x) {
+;
+	ldy     #$03
+	clc
+	lda     #$01
+	adc     (c_sp),y
+	jmp     L000D
+;
+; }
+;
+L0009:	jsr     incsp2
+;
+; for (y = y_start; y < y_end; ++y) {
+;
+	ldy     #$02
+	clc
+	lda     #$01
+	adc     (c_sp),y
+	jmp     L000E
+;
+; }
+;
+L0005:	jmp     incsp5
 
 .endproc
 

@@ -69,3 +69,26 @@ void canvas_render_tile(uint8_t x, uint8_t y) {
     PPUADDR = (uint8_t)(addr & 0xFF);
     PPUDATA = g_canvas[y][x];   /* tile index == color index (0..3) */
 }
+
+void canvas_render_rows(uint8_t y_start, uint8_t row_count) {
+    uint8_t y, x;
+    uint8_t y_end = (uint8_t)(y_start + row_count);
+
+    if (y_start >= CANVAS_HEIGHT) {
+        return;
+    }
+    if (y_end > CANVAS_HEIGHT) {
+        y_end = CANVAS_HEIGHT;
+    }
+
+    for (y = y_start; y < y_end; ++y) {
+        uint16_t addr = 0x2000u + (uint16_t)y * 32u;
+
+        PPUADDR = (uint8_t)(addr >> 8);
+        PPUADDR = (uint8_t)(addr & 0xFF);
+
+        for (x = 0; x < CANVAS_WIDTH; ++x) {
+            PPUDATA = g_canvas[y][x];
+        }
+    }
+}

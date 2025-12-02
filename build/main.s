@@ -17,6 +17,8 @@
 	.import		_ppu_clear_oam
 	.import		_ppu_draw_cursor_sprite
 	.import		_input_update
+	.import		_input_get_buttons
+	.import		_input_get_prev_buttons
 	.import		_input_pressed
 	.import		_g_canvas
 	.import		_canvas_clear
@@ -24,6 +26,19 @@
 	.import		_canvas_render_full
 	.import		_canvas_render_tile
 	.export		_main
+
+.segment	"DATA"
+
+_s_full_redraw_needed:
+	.byte	$00
+_s_current_tool:
+	.byte	$00
+_s_drag_active:
+	.byte	$00
+_s_drag_start_x:
+	.byte	$00
+_s_drag_start_y:
+	.byte	$00
 
 .segment	"RODATA"
 
@@ -44,6 +59,11 @@ _s_bg_palette:
 	.byte	$0A
 	.byte	$1A
 	.byte	$2A
+
+.segment	"BSS"
+
+_s_fill_queue:
+	.res	1920,$00
 
 ; ---------------------------------------------------------------
 ; void __near__ ui_update_palette_bar (unsigned char current_color)
@@ -69,14 +89,14 @@ L000D:	sta     (c_sp),y
 	cmp     #$04
 	bcs     L000F
 ;
-; g_canvas[UI_PALETTE_ROW][x] = x;        /* tile index 0..3 */
+; g_canvas[UI_PALETTE_ROW][x] = x;            /* tile 0..3 */
 ;
 	lda     (c_sp),y
 	tax
 	lda     (c_sp),y
 	sta     _g_canvas,x
 ;
-; canvas_render_tile(x, UI_PALETTE_ROW);  /* push to VRAM */
+; canvas_render_tile(x, UI_PALETTE_ROW);
 ;
 	lda     (c_sp),y
 	jsr     pusha
@@ -143,6 +163,1431 @@ L0008:	iny
 .endproc
 
 ; ---------------------------------------------------------------
+; void __near__ ui_update_tool_indicator (enum $anon-enum-0002 tool)
+; ---------------------------------------------------------------
+
+.segment	"CODE"
+
+.proc	_ui_update_tool_indicator: near
+
+.segment	"CODE"
+
+;
+; static void ui_update_tool_indicator(Tool tool) {
+;
+	jsr     pusha
+;
+; switch (tool) {
+;
+	jsr     decsp5
+	ldy     #$05
+	lda     (c_sp),y
+;
+; }
+;
+	beq     L0014
+	cmp     #$01
+	beq     L0015
+	cmp     #$02
+	beq     L0017
+	cmp     #$03
+	beq     L0019
+	cmp     #$04
+	beq     L001A
+	jmp     L001A
+;
+; pattern[0] = pattern[1] = pattern[2] = pattern[3] = 1;
+;
+L0014:	lda     #$01
+	ldy     #$03
+	sta     (c_sp),y
+	dey
+	sta     (c_sp),y
+	dey
+	sta     (c_sp),y
+	dey
+;
+; break;
+;
+	jmp     L0012
+;
+; pattern[0] = pattern[1] = pattern[2] = pattern[3] = 0;
+;
+L0015:	lda     #$00
+	ldy     #$03
+	sta     (c_sp),y
+	dey
+	sta     (c_sp),y
+	dey
+	sta     (c_sp),y
+	dey
+;
+; break;
+;
+	jmp     L0012
+;
+; pattern[0] = pattern[1] = pattern[2] = pattern[3] = 2;
+;
+L0017:	ldy     #$03
+	sta     (c_sp),y
+	dey
+	sta     (c_sp),y
+	dey
+	sta     (c_sp),y
+	dey
+;
+; break;
+;
+	jmp     L0012
+;
+; pattern[0] = pattern[1] = pattern[2] = pattern[3] = 3;
+;
+L0019:	tay
+	sta     (c_sp),y
+	dey
+	sta     (c_sp),y
+	dey
+	sta     (c_sp),y
+	dey
+;
+; break;
+;
+	jmp     L0012
+;
+; pattern[0] = 1;
+;
+L001A:	lda     #$01
+	ldy     #$00
+	sta     (c_sp),y
+;
+; pattern[1] = 0;
+;
+	tya
+	iny
+	sta     (c_sp),y
+;
+; pattern[2] = 1;
+;
+	tya
+	iny
+	sta     (c_sp),y
+;
+; pattern[3] = 0;
+;
+	lda     #$00
+	iny
+L0012:	sta     (c_sp),y
+;
+; for (x = 0; x < 4u; ++x) {
+;
+	lda     #$00
+	ldy     #$04
+L0013:	sta     (c_sp),y
+	cmp     #$04
+	bcs     L000B
+;
+; uint8_t cx = (uint8_t)(6u + x);
+;
+	lda     (c_sp),y
+	clc
+	adc     #$06
+	jsr     pusha
+;
+; g_canvas[UI_HIGHLIGHT_ROW][cx] = pattern[x];
+;
+	lda     #<(_g_canvas+32)
+	ldx     #>(_g_canvas+32)
+	ldy     #$00
+	clc
+	adc     (c_sp),y
+	bcc     L000F
+	inx
+L000F:	jsr     pushax
+	lda     c_sp
+	ldx     c_sp+1
+	clc
+	adc     #$03
+	bcc     L0010
+	inx
+L0010:	ldy     #$07
+	clc
+	adc     (c_sp),y
+	bcc     L0011
+	inx
+L0011:	sta     ptr1
+	stx     ptr1+1
+	ldy     #$00
+	lda     (ptr1),y
+	jsr     staspidx
+;
+; canvas_render_tile(cx, UI_HIGHLIGHT_ROW);
+;
+	ldy     #$00
+	lda     (c_sp),y
+	jsr     pusha
+	lda     #$01
+	jsr     _canvas_render_tile
+;
+; }
+;
+	jsr     incsp1
+;
+; for (x = 0; x < 4u; ++x) {
+;
+	ldy     #$04
+	clc
+	lda     #$01
+	adc     (c_sp),y
+	jmp     L0013
+;
+; }
+;
+L000B:	jmp     incsp6
+
+.endproc
+
+; ---------------------------------------------------------------
+; void __near__ draw_line (unsigned char x0, unsigned char y0, unsigned char x1, unsigned char y1, unsigned char color)
+; ---------------------------------------------------------------
+
+.segment	"CODE"
+
+.proc	_draw_line: near
+
+.segment	"CODE"
+
+;
+; uint8_t color) {
+;
+	jsr     pusha
+;
+; int ix0 = x0;
+;
+	ldy     #$04
+	lda     (c_sp),y
+	jsr     pusha0
+;
+; int iy0 = y0;
+;
+	ldy     #$05
+	lda     (c_sp),y
+	jsr     pusha0
+;
+; int ix1 = x1;
+;
+	ldy     #$06
+	lda     (c_sp),y
+	jsr     pusha0
+;
+; int iy1 = y1;
+;
+	ldy     #$07
+	lda     (c_sp),y
+	jsr     pusha0
+;
+; int dx = (ix1 > ix0) ? (ix1 - ix0) : (ix0 - ix1);
+;
+	ldy     #$05
+	jsr     pushwysp
+	ldy     #$09
+	lda     (c_sp),y
+	tax
+	dey
+	lda     (c_sp),y
+	jsr     tosicmp
+	bmi     L0002
+	beq     L0002
+	ldy     #$03
+	lda     (c_sp),y
+	tax
+	dey
+	lda     (c_sp),y
+	sec
+	ldy     #$06
+	jmp     L0030
+L0002:	ldy     #$07
+	lda     (c_sp),y
+	tax
+	dey
+	lda     (c_sp),y
+	sec
+	ldy     #$02
+L0030:	sbc     (c_sp),y
+	pha
+	txa
+	iny
+	sbc     (c_sp),y
+	tax
+	pla
+	jsr     pushax
+;
+; int sx = (ix0 < ix1) ? 1 : -1;
+;
+	ldy     #$09
+	lda     (c_sp),y
+	tax
+	dey
+	lda     (c_sp),y
+	ldy     #$04
+	cmp     (c_sp),y
+	txa
+	iny
+	sbc     (c_sp),y
+	bvc     L001B
+	eor     #$80
+L001B:	bpl     L0004
+	ldx     #$00
+	lda     #$01
+	jmp     L0005
+L0004:	ldx     #$FF
+	txa
+L0005:	jsr     pushax
+;
+; int dy = (iy1 > iy0) ? (iy0 - iy1) : (iy1 - iy0); /* negative */
+;
+	ldy     #$07
+	jsr     pushwysp
+	ldy     #$0B
+	lda     (c_sp),y
+	tax
+	dey
+	lda     (c_sp),y
+	jsr     tosicmp
+	bmi     L0006
+	beq     L0006
+	ldy     #$09
+	lda     (c_sp),y
+	tax
+	dey
+	lda     (c_sp),y
+	sec
+	ldy     #$04
+	jmp     L0031
+L0006:	ldy     #$05
+	lda     (c_sp),y
+	tax
+	dey
+	lda     (c_sp),y
+	sec
+	ldy     #$08
+L0031:	sbc     (c_sp),y
+	pha
+	txa
+	iny
+	sbc     (c_sp),y
+	tax
+	pla
+	jsr     pushax
+;
+; int sy = (iy0 < iy1) ? 1 : -1;
+;
+	ldy     #$0B
+	lda     (c_sp),y
+	tax
+	dey
+	lda     (c_sp),y
+	ldy     #$06
+	cmp     (c_sp),y
+	txa
+	iny
+	sbc     (c_sp),y
+	bvc     L001C
+	eor     #$80
+L001C:	bpl     L0008
+	ldx     #$00
+	lda     #$01
+	jmp     L0009
+L0008:	ldx     #$FF
+	txa
+L0009:	jsr     pushax
+;
+; int err = dx + dy;
+;
+	ldy     #$06
+	lda     (c_sp),y
+	ldy     #$02
+	clc
+	adc     (c_sp),y
+	pha
+	ldy     #$07
+	lda     (c_sp),y
+	ldy     #$03
+	adc     (c_sp),y
+	tax
+	pla
+	jsr     pushax
+;
+; if (iy0 >= UI_FIRST_DRAW_ROW && iy0 < CANVAS_HEIGHT &&
+;
+L000D:	ldy     #$0F
+	lda     (c_sp),y
+	tax
+	dey
+	lda     (c_sp),y
+	cmp     #$02
+	txa
+	sbc     #$00
+	bvs     L000F
+	eor     #$80
+L000F:	bpl     L000E
+	iny
+	lda     (c_sp),y
+	tax
+	dey
+	lda     (c_sp),y
+	cmp     #$1E
+	txa
+	sbc     #$00
+	bvc     L0011
+	eor     #$80
+L0011:	bpl     L000E
+;
+; ix0 >= 0 && ix0 < CANVAS_WIDTH) {
+;
+	ldy     #$11
+	lda     (c_sp),y
+	bmi     L000E
+	ldy     #$11
+	lda     (c_sp),y
+	tax
+	dey
+	lda     (c_sp),y
+	cmp     #$20
+	txa
+	sbc     #$00
+	bvc     L0012
+	eor     #$80
+L0012:	bpl     L000E
+;
+; canvas_set_pixel((uint8_t)ix0, (uint8_t)iy0, color);
+;
+	jsr     decsp2
+	ldy     #$12
+	lda     (c_sp),y
+	ldy     #$01
+	sta     (c_sp),y
+	ldy     #$10
+	lda     (c_sp),y
+	ldy     #$00
+	sta     (c_sp),y
+	ldy     #$14
+	lda     (c_sp),y
+	jsr     _canvas_set_pixel
+;
+; if (ix0 == ix1 && iy0 == iy1) {
+;
+L000E:	ldy     #$11
+	lda     (c_sp),y
+	tax
+	dey
+	lda     (c_sp),y
+	ldy     #$0C
+	cmp     (c_sp),y
+	bne     L0015
+	txa
+	iny
+	cmp     (c_sp),y
+	bne     L0015
+	ldy     #$0F
+	lda     (c_sp),y
+	tax
+	dey
+	lda     (c_sp),y
+	ldy     #$0A
+	cmp     (c_sp),y
+	bne     L0015
+	txa
+	iny
+	cmp     (c_sp),y
+	jeq     L000B
+;
+; int e2 = err << 1;
+;
+L0015:	ldy     #$01
+	lda     (c_sp),y
+	sta     tmp1
+	dey
+	lda     (c_sp),y
+	asl     a
+	rol     tmp1
+	ldx     tmp1
+	jsr     pushax
+;
+; if (e2 >= dy) { err += dy; ix0 += sx; }
+;
+	ldy     #$01
+	lda     (c_sp),y
+	tax
+	dey
+	lda     (c_sp),y
+	ldy     #$06
+	cmp     (c_sp),y
+	txa
+	iny
+	sbc     (c_sp),y
+	bvs     L001F
+	eor     #$80
+L001F:	bpl     L0019
+	dey
+	lda     (c_sp),y
+	ldy     #$02
+	clc
+	adc     (c_sp),y
+	sta     (c_sp),y
+	ldy     #$07
+	lda     (c_sp),y
+	ldy     #$03
+	adc     (c_sp),y
+	sta     (c_sp),y
+	ldy     #$08
+	lda     (c_sp),y
+	ldy     #$12
+	clc
+	adc     (c_sp),y
+	sta     (c_sp),y
+	ldy     #$09
+	lda     (c_sp),y
+	ldy     #$13
+	adc     (c_sp),y
+	sta     (c_sp),y
+;
+; if (e2 <= dx) { err += dx; iy0 += sy; }
+;
+L0019:	jsr     pushw0sp
+	ldy     #$0D
+	lda     (c_sp),y
+	tax
+	dey
+	lda     (c_sp),y
+	jsr     tosicmp
+	beq     L0022
+	bpl     L001A
+L0022:	ldy     #$0A
+	lda     (c_sp),y
+	ldy     #$02
+	clc
+	adc     (c_sp),y
+	sta     (c_sp),y
+	ldy     #$0B
+	lda     (c_sp),y
+	ldy     #$03
+	adc     (c_sp),y
+	sta     (c_sp),y
+	iny
+	lda     (c_sp),y
+	ldy     #$10
+	clc
+	adc     (c_sp),y
+	sta     (c_sp),y
+	ldy     #$05
+	lda     (c_sp),y
+	ldy     #$11
+	adc     (c_sp),y
+	sta     (c_sp),y
+;
+; }
+;
+L001A:	jsr     incsp2
+;
+; }
+;
+	jmp     L000D
+;
+; }
+;
+L000B:	ldy     #$17
+	jmp     addysp
+
+.endproc
+
+; ---------------------------------------------------------------
+; void __near__ draw_rect (unsigned char x0, unsigned char y0, unsigned char x1, unsigned char y1, unsigned char color)
+; ---------------------------------------------------------------
+
+.segment	"CODE"
+
+.proc	_draw_rect: near
+
+.segment	"CODE"
+
+;
+; uint8_t color) {
+;
+	jsr     pusha
+;
+; uint8_t x_min = (x0 < x1) ? x0 : x1;
+;
+	jsr     decsp2
+	ldy     #$06
+	lda     (c_sp),y
+	ldy     #$04
+	cmp     (c_sp),y
+	bcs     L0015
+	ldy     #$06
+L0015:	lda     (c_sp),y
+	jsr     pusha
+;
+; uint8_t x_max = (x0 < x1) ? x1 : x0;
+;
+	ldy     #$07
+	lda     (c_sp),y
+	ldy     #$05
+	cmp     (c_sp),y
+	bcc     L0016
+	ldy     #$07
+L0016:	lda     (c_sp),y
+	jsr     pusha
+;
+; uint8_t y_min = (y0 < y1) ? y0 : y1;
+;
+	ldy     #$07
+	lda     (c_sp),y
+	ldy     #$05
+	cmp     (c_sp),y
+	bcs     L0017
+	ldy     #$07
+L0017:	lda     (c_sp),y
+	jsr     pusha
+;
+; uint8_t y_max = (y0 < y1) ? y1 : y0;
+;
+	ldy     #$08
+	lda     (c_sp),y
+	ldy     #$06
+	cmp     (c_sp),y
+	bcc     L0018
+	ldy     #$08
+L0018:	lda     (c_sp),y
+	jsr     pusha
+;
+; if (y_min < UI_FIRST_DRAW_ROW) {
+;
+	ldy     #$01
+	lda     (c_sp),y
+	cmp     #$02
+	bcs     L000A
+;
+; y_min = UI_FIRST_DRAW_ROW;
+;
+	lda     #$02
+	sta     (c_sp),y
+;
+; if (y_max >= CANVAS_HEIGHT) {
+;
+L000A:	dey
+	lda     (c_sp),y
+	cmp     #$1E
+	bcc     L000B
+;
+; y_max = (uint8_t)(CANVAS_HEIGHT - 1u);
+;
+	lda     #$1D
+	sta     (c_sp),y
+;
+; for (y = y_min; y <= y_max; ++y) {
+;
+L000B:	iny
+	lda     (c_sp),y
+	ldy     #$04
+L001A:	sta     (c_sp),y
+	ldy     #$00
+	cmp     (c_sp),y
+	beq     L001B
+	bcs     L000D
+;
+; for (x = x_min; x <= x_max; ++x) {
+;
+L001B:	ldy     #$03
+	lda     (c_sp),y
+	ldy     #$05
+L0019:	sta     (c_sp),y
+	ldy     #$02
+	cmp     (c_sp),y
+	beq     L001C
+	bcs     L000E
+;
+; if (x < CANVAS_WIDTH) {
+;
+L001C:	ldy     #$05
+	lda     (c_sp),y
+	cmp     #$20
+	bcs     L0020
+;
+; canvas_set_pixel(x, y, color);
+;
+	jsr     decsp2
+	ldy     #$07
+	lda     (c_sp),y
+	ldy     #$01
+	sta     (c_sp),y
+	ldy     #$06
+	lda     (c_sp),y
+	ldy     #$00
+	sta     (c_sp),y
+	ldy     #$08
+	lda     (c_sp),y
+	jsr     _canvas_set_pixel
+;
+; for (x = x_min; x <= x_max; ++x) {
+;
+	ldy     #$05
+L0020:	clc
+	lda     #$01
+	adc     (c_sp),y
+	jmp     L0019
+;
+; for (y = y_min; y <= y_max; ++y) {
+;
+L000E:	ldy     #$04
+	clc
+	lda     #$01
+	adc     (c_sp),y
+	jmp     L001A
+;
+; }
+;
+L000D:	ldy     #$0B
+	jmp     addysp
+
+.endproc
+
+; ---------------------------------------------------------------
+; void __near__ tool_flood_fill (unsigned char start_x, unsigned char start_y, unsigned char new_color)
+; ---------------------------------------------------------------
+
+.segment	"CODE"
+
+.proc	_tool_flood_fill: near
+
+.segment	"CODE"
+
+;
+; static void tool_flood_fill(uint8_t start_x, uint8_t start_y, uint8_t new_color) {
+;
+	jsr     pusha
+;
+; uint16_t head = 0;
+;
+	jsr     decsp1
+	jsr     push0
+;
+; uint16_t tail = 0;
+;
+	jsr     push0
+;
+; if (start_x >= CANVAS_WIDTH || start_y >= CANVAS_HEIGHT) {
+;
+	ldy     #$07
+	lda     (c_sp),y
+	cmp     #$20
+	jcs     L0008
+	dey
+	lda     (c_sp),y
+	cmp     #$1E
+	jcs     L0008
+;
+; if (start_y < UI_FIRST_DRAW_ROW) {
+;
+	cmp     #$02
+;
+; return; /* don't flood UI rows */
+;
+	jcc     L0008
+;
+; target_color = g_canvas[start_y][start_x];
+;
+	jsr     aslax4
+	stx     tmp1
+	asl     a
+	rol     tmp1
+	clc
+	adc     #<(_g_canvas)
+	sta     ptr1
+	lda     tmp1
+	adc     #>(_g_canvas)
+	sta     ptr1+1
+	iny
+	lda     (c_sp),y
+	tay
+	lda     (ptr1),y
+	ldy     #$04
+	sta     (c_sp),y
+;
+; if (target_color == new_color) {
+;
+	iny
+	cmp     (c_sp),y
+;
+; return;
+;
+	jeq     L0008
+;
+; s_fill_queue[tail].x = start_x;
+;
+	ldy     #$01
+	lda     (c_sp),y
+	sta     tmp1
+	dey
+	lda     (c_sp),y
+	asl     a
+	rol     tmp1
+	clc
+	adc     #<(_s_fill_queue)
+	sta     ptr1
+	lda     tmp1
+	adc     #>(_s_fill_queue)
+	sta     ptr1+1
+	ldy     #$07
+	lda     (c_sp),y
+	ldy     #$00
+	sta     (ptr1),y
+;
+; s_fill_queue[tail].y = start_y;
+;
+	iny
+	lda     (c_sp),y
+	sta     tmp1
+	dey
+	lda     (c_sp),y
+	asl     a
+	rol     tmp1
+	clc
+	adc     #<(_s_fill_queue)
+	sta     ptr1
+	lda     tmp1
+	adc     #>(_s_fill_queue)
+	sta     ptr1+1
+	ldy     #$06
+	lda     (c_sp),y
+	ldy     #$01
+	sta     (ptr1),y
+;
+; tail++;
+;
+	ldx     #$00
+	tya
+	jsr     addeq0sp
+;
+; while (head < tail && head < FILL_QUEUE_MAX) {
+;
+	jmp     L0009
+;
+; uint8_t x = s_fill_queue[head].x;
+;
+L0007:	ldy     #$03
+	lda     (c_sp),y
+	sta     tmp1
+	dey
+	lda     (c_sp),y
+	asl     a
+	rol     tmp1
+	sta     ptr1
+	lda     tmp1
+	clc
+	adc     #>(_s_fill_queue)
+	sta     ptr1+1
+	ldy     #<(_s_fill_queue)
+	lda     (ptr1),y
+	jsr     pusha
+;
+; uint8_t y = s_fill_queue[head].y;
+;
+	ldy     #$04
+	lda     (c_sp),y
+	sta     tmp1
+	dey
+	lda     (c_sp),y
+	asl     a
+	rol     tmp1
+	clc
+	adc     #<(_s_fill_queue)
+	sta     ptr1
+	lda     tmp1
+	adc     #>(_s_fill_queue)
+	sta     ptr1+1
+	ldy     #$01
+	lda     (ptr1),y
+	jsr     pusha
+;
+; head++;
+;
+	ldy     #$04
+	ldx     #$00
+	lda     #$01
+	jsr     addeqysp
+;
+; if (x >= CANVAS_WIDTH || y >= CANVAS_HEIGHT) {
+;
+	ldy     #$01
+	lda     (c_sp),y
+	cmp     #$20
+	jcs     L002A
+	dey
+	lda     (c_sp),y
+	cmp     #$1E
+	jcs     L002A
+;
+; if (y < UI_FIRST_DRAW_ROW) {
+;
+	cmp     #$02
+;
+; continue;
+;
+	jcc     L002A
+;
+; if (g_canvas[y][x] != target_color) {
+;
+	ldx     #$00
+	lda     (c_sp),y
+	jsr     aslax4
+	stx     tmp1
+	asl     a
+	rol     tmp1
+	clc
+	adc     #<(_g_canvas)
+	sta     ptr1
+	lda     tmp1
+	adc     #>(_g_canvas)
+	sta     ptr1+1
+	iny
+	lda     (c_sp),y
+	tay
+	lda     (ptr1),y
+	ldy     #$06
+	cmp     (c_sp),y
+;
+; continue;
+;
+	jne     L002A
+;
+; g_canvas[y][x] = new_color;
+;
+	ldx     #$00
+	lda     (c_sp,x)
+	jsr     aslax4
+	stx     tmp1
+	asl     a
+	rol     tmp1
+	clc
+	adc     #<(_g_canvas)
+	sta     ptr1
+	lda     tmp1
+	adc     #>(_g_canvas)
+	sta     ptr1+1
+	ldy     #$01
+	lda     (c_sp),y
+	clc
+	adc     ptr1
+	ldx     ptr1+1
+	bcc     L0033
+	inx
+L0033:	sta     ptr1
+	stx     ptr1+1
+	ldy     #$07
+	lda     (c_sp),y
+	ldy     #$00
+	sta     (ptr1),y
+;
+; if (x > 0) {
+;
+	iny
+	ldx     #$00
+	lda     (c_sp),y
+	jeq     L003D
+;
+; uint8_t nx = (uint8_t)(x - 1u);
+;
+	sec
+	sbc     #$01
+	jsr     pusha
+;
+; if (g_canvas[y][nx] == target_color && tail < FILL_QUEUE_MAX) {
+;
+	ldy     #$01
+	lda     (c_sp),y
+	jsr     aslax4
+	stx     tmp1
+	asl     a
+	rol     tmp1
+	clc
+	adc     #<(_g_canvas)
+	sta     ptr1
+	lda     tmp1
+	adc     #>(_g_canvas)
+	sta     ptr1+1
+	dey
+	lda     (c_sp),y
+	tay
+	lda     (ptr1),y
+	ldy     #$07
+	cmp     (c_sp),y
+	bne     L0015
+	ldy     #$04
+	lda     (c_sp),y
+	cmp     #$03
+	bne     L0017
+	dey
+	lda     (c_sp),y
+	cmp     #$C0
+L0017:	bcs     L0015
+;
+; s_fill_queue[tail].x = nx;
+;
+	ldy     #$04
+	lda     (c_sp),y
+	sta     tmp1
+	dey
+	lda     (c_sp),y
+	asl     a
+	rol     tmp1
+	clc
+	adc     #<(_s_fill_queue)
+	sta     ptr1
+	lda     tmp1
+	adc     #>(_s_fill_queue)
+	sta     ptr1+1
+	ldy     #$00
+	lda     (c_sp),y
+	sta     (ptr1),y
+;
+; s_fill_queue[tail].y = y;
+;
+	ldy     #$04
+	lda     (c_sp),y
+	sta     tmp1
+	dey
+	lda     (c_sp),y
+	asl     a
+	rol     tmp1
+	clc
+	adc     #<(_s_fill_queue)
+	sta     ptr1
+	lda     tmp1
+	adc     #>(_s_fill_queue)
+	sta     ptr1+1
+	ldy     #$01
+	lda     (c_sp),y
+	sta     (ptr1),y
+;
+; tail++;
+;
+	ldy     #$03
+	ldx     #$00
+	lda     #$01
+	jsr     addeqysp
+;
+; }
+;
+L0015:	jsr     incsp1
+;
+; if (x + 1u < CANVAS_WIDTH) {
+;
+	ldy     #$01
+	ldx     #$00
+L003D:	lda     (c_sp),y
+	clc
+	adc     #$01
+	bcc     L001B
+	inx
+L001B:	cpx     #$00
+	bne     L001C
+	cmp     #$20
+L001C:	jcs     L001A
+;
+; uint8_t nx = (uint8_t)(x + 1u);
+;
+	lda     (c_sp),y
+	clc
+	adc     #$01
+	jsr     pusha
+;
+; if (g_canvas[y][nx] == target_color && tail < FILL_QUEUE_MAX) {
+;
+	ldy     #$01
+	ldx     #$00
+	lda     (c_sp),y
+	jsr     aslax4
+	stx     tmp1
+	asl     a
+	rol     tmp1
+	clc
+	adc     #<(_g_canvas)
+	sta     ptr1
+	lda     tmp1
+	adc     #>(_g_canvas)
+	sta     ptr1+1
+	dey
+	lda     (c_sp),y
+	tay
+	lda     (ptr1),y
+	ldy     #$07
+	cmp     (c_sp),y
+	bne     L001E
+	ldy     #$04
+	lda     (c_sp),y
+	cmp     #$03
+	bne     L0020
+	dey
+	lda     (c_sp),y
+	cmp     #$C0
+L0020:	bcs     L001E
+;
+; s_fill_queue[tail].x = nx;
+;
+	ldy     #$04
+	lda     (c_sp),y
+	sta     tmp1
+	dey
+	lda     (c_sp),y
+	asl     a
+	rol     tmp1
+	clc
+	adc     #<(_s_fill_queue)
+	sta     ptr1
+	lda     tmp1
+	adc     #>(_s_fill_queue)
+	sta     ptr1+1
+	ldy     #$00
+	lda     (c_sp),y
+	sta     (ptr1),y
+;
+; s_fill_queue[tail].y = y;
+;
+	ldy     #$04
+	lda     (c_sp),y
+	sta     tmp1
+	dey
+	lda     (c_sp),y
+	asl     a
+	rol     tmp1
+	clc
+	adc     #<(_s_fill_queue)
+	sta     ptr1
+	lda     tmp1
+	adc     #>(_s_fill_queue)
+	sta     ptr1+1
+	ldy     #$01
+	lda     (c_sp),y
+	sta     (ptr1),y
+;
+; tail++;
+;
+	ldy     #$03
+	ldx     #$00
+	lda     #$01
+	jsr     addeqysp
+;
+; }
+;
+L001E:	jsr     incsp1
+;
+; if (y > UI_FIRST_DRAW_ROW) {
+;
+L001A:	ldy     #$00
+	lda     (c_sp),y
+	cmp     #$03
+	ldx     #$00
+	jcc     L0043
+;
+; uint8_t ny = (uint8_t)(y - 1u);
+;
+	lda     (c_sp),y
+	sec
+	sbc     #$01
+	jsr     pusha
+;
+; if (g_canvas[ny][x] == target_color && tail < FILL_QUEUE_MAX) {
+;
+	lda     (c_sp,x)
+	jsr     aslax4
+	stx     tmp1
+	asl     a
+	rol     tmp1
+	clc
+	adc     #<(_g_canvas)
+	sta     ptr1
+	lda     tmp1
+	adc     #>(_g_canvas)
+	sta     ptr1+1
+	ldy     #$02
+	lda     (c_sp),y
+	tay
+	lda     (ptr1),y
+	ldy     #$07
+	cmp     (c_sp),y
+	bne     L0025
+	ldy     #$04
+	lda     (c_sp),y
+	cmp     #$03
+	bne     L0027
+	dey
+	lda     (c_sp),y
+	cmp     #$C0
+L0027:	bcs     L0025
+;
+; s_fill_queue[tail].x = x;
+;
+	ldy     #$04
+	lda     (c_sp),y
+	sta     tmp1
+	dey
+	lda     (c_sp),y
+	asl     a
+	rol     tmp1
+	clc
+	adc     #<(_s_fill_queue)
+	sta     ptr1
+	lda     tmp1
+	adc     #>(_s_fill_queue)
+	sta     ptr1+1
+	dey
+	lda     (c_sp),y
+	ldy     #$00
+	sta     (ptr1),y
+;
+; s_fill_queue[tail].y = ny;
+;
+	ldy     #$04
+	lda     (c_sp),y
+	sta     tmp1
+	dey
+	lda     (c_sp),y
+	asl     a
+	rol     tmp1
+	clc
+	adc     #<(_s_fill_queue)
+	sta     ptr1
+	lda     tmp1
+	adc     #>(_s_fill_queue)
+	sta     ptr1+1
+	ldy     #$00
+	lda     (c_sp),y
+	iny
+	sta     (ptr1),y
+;
+; tail++;
+;
+	ldy     #$03
+	ldx     #$00
+	lda     #$01
+	jsr     addeqysp
+;
+; }
+;
+L0025:	jsr     incsp1
+;
+; if (y + 1u < CANVAS_HEIGHT) {
+;
+	ldy     #$00
+	ldx     #$00
+L0043:	lda     (c_sp),y
+	clc
+	adc     #$01
+	bcc     L002B
+	inx
+L002B:	cpx     #$00
+	bne     L002C
+	cmp     #$1E
+L002C:	jcs     L002A
+;
+; uint8_t ny = (uint8_t)(y + 1u);
+;
+	lda     (c_sp),y
+	clc
+	adc     #$01
+	jsr     pusha
+;
+; if (g_canvas[ny][x] == target_color && tail < FILL_QUEUE_MAX) {
+;
+	ldx     #$00
+	lda     (c_sp,x)
+	jsr     aslax4
+	stx     tmp1
+	asl     a
+	rol     tmp1
+	clc
+	adc     #<(_g_canvas)
+	sta     ptr1
+	lda     tmp1
+	adc     #>(_g_canvas)
+	sta     ptr1+1
+	ldy     #$02
+	lda     (c_sp),y
+	tay
+	lda     (ptr1),y
+	ldy     #$07
+	cmp     (c_sp),y
+	bne     L002E
+	ldy     #$04
+	lda     (c_sp),y
+	cmp     #$03
+	bne     L0030
+	dey
+	lda     (c_sp),y
+	cmp     #$C0
+L0030:	bcs     L002E
+;
+; s_fill_queue[tail].x = x;
+;
+	ldy     #$04
+	lda     (c_sp),y
+	sta     tmp1
+	dey
+	lda     (c_sp),y
+	asl     a
+	rol     tmp1
+	clc
+	adc     #<(_s_fill_queue)
+	sta     ptr1
+	lda     tmp1
+	adc     #>(_s_fill_queue)
+	sta     ptr1+1
+	dey
+	lda     (c_sp),y
+	ldy     #$00
+	sta     (ptr1),y
+;
+; s_fill_queue[tail].y = ny;
+;
+	ldy     #$04
+	lda     (c_sp),y
+	sta     tmp1
+	dey
+	lda     (c_sp),y
+	asl     a
+	rol     tmp1
+	clc
+	adc     #<(_s_fill_queue)
+	sta     ptr1
+	lda     tmp1
+	adc     #>(_s_fill_queue)
+	sta     ptr1+1
+	ldy     #$00
+	lda     (c_sp),y
+	iny
+	sta     (ptr1),y
+;
+; tail++;
+;
+	ldy     #$03
+	ldx     #$00
+	lda     #$01
+	jsr     addeqysp
+;
+; }
+;
+L002E:	jsr     incsp1
+;
+; }
+;
+L002A:	jsr     incsp2
+;
+; while (head < tail && head < FILL_QUEUE_MAX) {
+;
+L0009:	ldy     #$03
+	lda     (c_sp),y
+	tax
+	dey
+	lda     (c_sp),y
+	ldy     #$00
+	cmp     (c_sp),y
+	txa
+	iny
+	sbc     (c_sp),y
+	bcs     L0008
+	ldy     #$03
+	lda     (c_sp),y
+	cmp     #$03
+	bne     L000B
+	dey
+	lda     (c_sp),y
+	cmp     #$C0
+L000B:	jcc     L0007
+;
+; }
+;
+L0008:	jmp     incsp8
+
+.endproc
+
+; ---------------------------------------------------------------
+; void __near__ canvas_clear_drawing_area (void)
+; ---------------------------------------------------------------
+
+.segment	"CODE"
+
+.proc	_canvas_clear_drawing_area: near
+
+.segment	"CODE"
+
+;
+; for (y = UI_FIRST_DRAW_ROW; y < CANVAS_HEIGHT; ++y) {
+;
+	jsr     decsp2
+	lda     #$02
+	ldy     #$00
+L000C:	sta     (c_sp),y
+	cmp     #$1E
+	bcs     L0003
+;
+; for (x = 0; x < CANVAS_WIDTH; ++x) {
+;
+	tya
+	iny
+L000B:	sta     (c_sp),y
+	cmp     #$20
+	bcs     L0004
+;
+; g_canvas[y][x] = 0;
+;
+	ldx     #$00
+	lda     (c_sp,x)
+	jsr     aslax4
+	stx     tmp1
+	asl     a
+	rol     tmp1
+	clc
+	adc     #<(_g_canvas)
+	sta     ptr1
+	lda     tmp1
+	adc     #>(_g_canvas)
+	sta     ptr1+1
+	ldy     #$01
+	lda     (c_sp),y
+	clc
+	adc     ptr1
+	ldx     ptr1+1
+	bcc     L000A
+	inx
+L000A:	sta     ptr1
+	stx     ptr1+1
+	lda     #$00
+	dey
+	sta     (ptr1),y
+;
+; for (x = 0; x < CANVAS_WIDTH; ++x) {
+;
+	iny
+	clc
+	tya
+	adc     (c_sp),y
+	jmp     L000B
+;
+; for (y = UI_FIRST_DRAW_ROW; y < CANVAS_HEIGHT; ++y) {
+;
+L0004:	dey
+	clc
+	lda     #$01
+	adc     (c_sp),y
+	jmp     L000C
+;
+; }
+;
+L0003:	jmp     incsp2
+
+.endproc
+
+; ---------------------------------------------------------------
 ; void __near__ main (void)
 ; ---------------------------------------------------------------
 
@@ -153,21 +1598,20 @@ L0008:	iny
 .segment	"CODE"
 
 ;
+; uint8_t current_color = 1;  
+;
+	jsr     decsp2
+	lda     #$01
+	jsr     pusha
+;
 ; cursor_x = CANVAS_WIDTH  / 2;
 ;
-	jsr     decsp3
 	lda     #$10
 	ldy     #$02
 	sta     (c_sp),y
 ;
 ; cursor_y = (CANVAS_HEIGHT + UI_FIRST_DRAW_ROW) / 2;
 ;
-	dey
-	sta     (c_sp),y
-;
-; current_color = 1;
-;
-	tya
 	dey
 	sta     (c_sp),y
 ;
@@ -187,20 +1631,21 @@ L0008:	iny
 	lda     #$10
 	jsr     _ppu_load_bg_palette
 ;
-; canvas_clear(0);
+; canvas_clear(0);                    /* clear entire canvas RAM */
 ;
 	lda     #$00
 	jsr     _canvas_clear
 ;
-; current_color = 1;
-;
-	lda     #$01
-	ldy     #$00
-	sta     (c_sp),y
-;
 ; ui_update_palette_bar(current_color);
 ;
+	ldy     #$00
+	lda     (c_sp),y
 	jsr     _ui_update_palette_bar
+;
+; ui_update_tool_indicator(s_current_tool);
+;
+	lda     _s_current_tool
+	jsr     _ui_update_tool_indicator
 ;
 ; canvas_render_full();
 ;
@@ -219,15 +1664,13 @@ L0008:	iny
 	asl     a
 	jsr     pusha
 ;
-; uint8_t sprite_y = (uint8_t)(cursor_y * 8u + 1u);
+; uint8_t sprite_y = (uint8_t)(cursor_y * 8u);
 ;
 	ldy     #$02
 	lda     (c_sp),y
 	asl     a
 	asl     a
 	asl     a
-	clc
-	adc     #$01
 	jsr     pusha
 ;
 ; ppu_draw_cursor_sprite(3, sprite_x, sprite_y);
@@ -253,99 +1696,120 @@ L0008:	iny
 	lda     #$00
 	sta     $2000
 ;
-; PPUMASK = 0x18;   /* bit3=BG, bit4=sprites */
+; PPUMASK = 0x18;   /* BG + sprites */
 ;
 	lda     #$18
 	sta     $2001
 ;
 ; ppu_wait_vblank();
 ;
-L0006:	jsr     decsp2
+L0005:	jsr     decsp4
 	jsr     _ppu_wait_vblank
 ;
 ; input_update();
 ;
 	jsr     _input_update
 ;
-; if (input_pressed(BTN_LEFT)) {
+; buttons = input_get_buttons();
 ;
-	lda     #$40
-	jsr     _input_pressed
-	tax
-	beq     L0014
+	jsr     _input_get_buttons
+	ldy     #$01
+	sta     (c_sp),y
 ;
-; if (cursor_x > 0) cursor_x--;
+; prev    = input_get_prev_buttons();
+;
+	jsr     _input_get_prev_buttons
+	ldy     #$00
+	sta     (c_sp),y
+;
+; if ((buttons & BTN_START) && (buttons & BTN_SELECT) &&
+;
+	iny
+	lda     (c_sp),y
+	and     #$08
+	beq     L002A
+	lda     (c_sp),y
+	and     #$04
+	beq     L002A
+;
+; !(prev & BTN_START) && !(prev & BTN_SELECT)) {
+;
+	dey
+	lda     (c_sp),y
+	and     #$08
+	bne     L002A
+	lda     (c_sp),y
+	and     #$04
+	bne     L002A
+;
+; s_drag_active = 0;
+;
+	sta     _s_drag_active
+;
+; canvas_clear_drawing_area();
+;
+	jsr     _canvas_clear_drawing_area
+;
+; ui_update_palette_bar(current_color);
 ;
 	ldy     #$04
 	lda     (c_sp),y
-	beq     L0014
-	sec
-	sbc     #$01
-	sta     (c_sp),y
+	jsr     _ui_update_palette_bar
 ;
-; if (input_pressed(BTN_RIGHT)) {
+; ui_update_tool_indicator(s_current_tool);
 ;
-L0014:	lda     #$80
-	jsr     _input_pressed
-	tax
-	beq     L0015
+	lda     _s_current_tool
+	jsr     _ui_update_tool_indicator
 ;
-; if (cursor_x < (CANVAS_WIDTH - 1u)) cursor_x++;
+; s_full_redraw_needed = 1;
 ;
-	ldy     #$04
-	lda     (c_sp),y
-	cmp     #$1F
-	bcs     L0015
-	clc
 	lda     #$01
-	adc     (c_sp),y
-	sta     (c_sp),y
+	sta     _s_full_redraw_needed
 ;
-; if (input_pressed(BTN_UP)) {
+; } else {
 ;
-L0015:	lda     #$10
+	jmp     L0024
+;
+; if (input_pressed(BTN_START)) {
+;
+L002A:	lda     #$08
 	jsr     _input_pressed
 	tax
-	beq     L0016
+	beq     L002B
 ;
-; if (cursor_y > UI_FIRST_DRAW_ROW) cursor_y--;
+; s_drag_active = 0;
 ;
-	ldy     #$03
-	lda     (c_sp),y
-	cmp     #$03
-	bcc     L0016
-	sec
-	sbc     #$01
-	sta     (c_sp),y
+	lda     #$00
+	sta     _s_drag_active
 ;
-; if (input_pressed(BTN_DOWN)) {
+; s_current_tool = (Tool)((s_current_tool + 1) % TOOL_COUNT);
 ;
-L0016:	lda     #$20
-	jsr     _input_pressed
 	tax
-	beq     L0017
-;
-; if (cursor_y < (CANVAS_HEIGHT - 1u)) cursor_y++;
-;
-	ldy     #$03
-	lda     (c_sp),y
-	cmp     #$1D
-	bcs     L0017
+	lda     _s_current_tool
 	clc
-	lda     #$01
-	adc     (c_sp),y
-	sta     (c_sp),y
+	adc     #$01
+	bcc     L000C
+	inx
+L000C:	jsr     pushax
+	ldx     #$00
+	lda     #$05
+	jsr     tosmoda0
+	sta     _s_current_tool
+;
+; ui_update_tool_indicator(s_current_tool);
+;
+	jsr     _ui_update_tool_indicator
 ;
 ; if (input_pressed(BTN_SELECT)) {
 ;
-L0017:	lda     #$04
+L002B:	lda     #$04
 	jsr     _input_pressed
 	tax
-	beq     L001A
+	beq     L002E
 ;
 ; current_color++;
 ;
-	ldy     #$02
+	ldy     #$04
 	clc
 	lda     #$01
 	adc     (c_sp),y
@@ -354,83 +1818,339 @@ L0017:	lda     #$04
 ; if (current_color > 3u) {
 ;
 	cmp     #$04
-	bcc     L0019
+	bcc     L002D
 ;
-; current_color = 1u;   /* wrap around */
+; current_color = 1u;
 ;
 	lda     #$01
 	sta     (c_sp),y
 ;
 ; ui_update_palette_bar(current_color);
 ;
-L0019:	lda     (c_sp),y
+L002D:	lda     (c_sp),y
 	jsr     _ui_update_palette_bar
+;
+; if (input_pressed(BTN_LEFT)) {
+;
+L002E:	lda     #$40
+	jsr     _input_pressed
+	tax
+	beq     L002F
+;
+; if (cursor_x > 0) cursor_x--;
+;
+	ldy     #$06
+	lda     (c_sp),y
+	beq     L002F
+	sec
+	sbc     #$01
+	sta     (c_sp),y
+;
+; if (input_pressed(BTN_RIGHT)) {
+;
+L002F:	lda     #$80
+	jsr     _input_pressed
+	tax
+	beq     L0030
+;
+; if (cursor_x < (CANVAS_WIDTH - 1u)) cursor_x++;
+;
+	ldy     #$06
+	lda     (c_sp),y
+	cmp     #$1F
+	bcs     L0030
+	clc
+	lda     #$01
+	adc     (c_sp),y
+	sta     (c_sp),y
+;
+; if (input_pressed(BTN_UP)) {
+;
+L0030:	lda     #$10
+	jsr     _input_pressed
+	tax
+	beq     L0031
+;
+; if (cursor_y > UI_FIRST_DRAW_ROW) cursor_y--;
+;
+	ldy     #$05
+	lda     (c_sp),y
+	cmp     #$03
+	bcc     L0031
+	sec
+	sbc     #$01
+	sta     (c_sp),y
+;
+; if (input_pressed(BTN_DOWN)) {
+;
+L0031:	lda     #$20
+	jsr     _input_pressed
+	tax
+	beq     L0032
+;
+; if (cursor_y < (CANVAS_HEIGHT - 1u)) cursor_y++;
+;
+	ldy     #$05
+	lda     (c_sp),y
+	cmp     #$1D
+	bcs     L0032
+	clc
+	lda     #$01
+	adc     (c_sp),y
+	sta     (c_sp),y
 ;
 ; if (input_pressed(BTN_A)) {
 ;
-L001A:	lda     #$01
+L0032:	lda     #$01
 	jsr     _input_pressed
 	tax
+	jeq     L0033
+;
+; switch (s_current_tool) {
+;
+	lda     _s_current_tool
+;
+; }
+;
+	beq     L001A
+	cmp     #$01
 	beq     L001B
+	cmp     #$02
+	beq     L001C
+	cmp     #$03
+	jeq     L001F
+	cmp     #$04
+	jeq     L0022
+	jmp     L0033
 ;
 ; canvas_set_pixel(cursor_x, cursor_y, current_color);
 ;
-	jsr     decsp2
-	ldy     #$06
+L001A:	jsr     decsp2
+	ldy     #$08
 	lda     (c_sp),y
 	ldy     #$01
 	sta     (c_sp),y
-	ldy     #$05
+	ldy     #$07
 	lda     (c_sp),y
 	ldy     #$00
 	sta     (c_sp),y
-	ldy     #$04
+	ldy     #$06
 	lda     (c_sp),y
 	jsr     _canvas_set_pixel
 ;
-; canvas_render_tile(cursor_x, cursor_y);
+; break;
 ;
-	ldy     #$04
-	lda     (c_sp),y
-	jsr     pusha
-	ldy     #$04
-	lda     (c_sp),y
-	jsr     _canvas_render_tile
-;
-; if (input_pressed(BTN_B)) {
-;
-L001B:	lda     #$02
-	jsr     _input_pressed
-	tax
-	beq     L001D
+	jmp     L0037
 ;
 ; canvas_set_pixel(cursor_x, cursor_y, 0);
 ;
-	jsr     decsp2
-	ldy     #$06
+L001B:	jsr     decsp2
+	ldy     #$08
 	lda     (c_sp),y
 	ldy     #$01
 	sta     (c_sp),y
-	ldy     #$05
+	ldy     #$07
 	lda     (c_sp),y
 	ldy     #$00
 	sta     (c_sp),y
 	tya
 	jsr     _canvas_set_pixel
 ;
-; canvas_render_tile(cursor_x, cursor_y);
+; break;
 ;
-	ldy     #$04
+	jmp     L0037
+;
+; if (!s_drag_active) {
+;
+L001C:	lda     _s_drag_active
+	bne     L001D
+;
+; s_drag_active = 1;
+;
+	lda     #$01
+	sta     _s_drag_active
+;
+; s_drag_start_x = cursor_x;
+;
+	ldy     #$06
 	lda     (c_sp),y
+	sta     _s_drag_start_x
+;
+; s_drag_start_y = cursor_y;
+;
+	dey
+	lda     (c_sp),y
+	sta     _s_drag_start_y
+;
+; } else {
+;
+	jmp     L0033
+;
+; draw_line(s_drag_start_x, s_drag_start_y,
+;
+L001D:	jsr     decsp4
+	lda     _s_drag_start_x
+	ldy     #$03
+	sta     (c_sp),y
+	lda     _s_drag_start_y
+	dey
+	sta     (c_sp),y
+;
+; cursor_x, cursor_y, current_color);
+;
+	ldy     #$0A
+	lda     (c_sp),y
+	ldy     #$01
+	sta     (c_sp),y
+	ldy     #$09
+	lda     (c_sp),y
+	ldy     #$00
+	sta     (c_sp),y
+	ldy     #$08
+	lda     (c_sp),y
+	jsr     _draw_line
+;
+; break;
+;
+	jmp     L0039
+;
+; if (!s_drag_active) {
+;
+L001F:	lda     _s_drag_active
+	bne     L0020
+;
+; s_drag_active = 1;
+;
+	lda     #$01
+	sta     _s_drag_active
+;
+; s_drag_start_x = cursor_x;
+;
+	ldy     #$06
+	lda     (c_sp),y
+	sta     _s_drag_start_x
+;
+; s_drag_start_y = cursor_y;
+;
+	dey
+	lda     (c_sp),y
+	sta     _s_drag_start_y
+;
+; } else {
+;
+	jmp     L0033
+;
+; draw_rect(s_drag_start_x, s_drag_start_y,
+;
+L0020:	jsr     decsp4
+	lda     _s_drag_start_x
+	ldy     #$03
+	sta     (c_sp),y
+	lda     _s_drag_start_y
+	dey
+	sta     (c_sp),y
+;
+; cursor_x, cursor_y, current_color);
+;
+	ldy     #$0A
+	lda     (c_sp),y
+	ldy     #$01
+	sta     (c_sp),y
+	ldy     #$09
+	lda     (c_sp),y
+	ldy     #$00
+	sta     (c_sp),y
+	ldy     #$08
+	lda     (c_sp),y
+	jsr     _draw_rect
+;
+; break;
+;
+	jmp     L0039
+;
+; tool_flood_fill(cursor_x, cursor_y, current_color);
+;
+L0022:	jsr     decsp2
+	ldy     #$08
+	lda     (c_sp),y
+	ldy     #$01
+	sta     (c_sp),y
+	ldy     #$07
+	lda     (c_sp),y
+	ldy     #$00
+	sta     (c_sp),y
+	ldy     #$06
+	lda     (c_sp),y
+	jsr     _tool_flood_fill
+;
+; s_drag_active = 0;
+;
+L0039:	lda     #$00
+	sta     _s_drag_active
+;
+; s_full_redraw_needed = 1;
+;
+L0037:	lda     #$01
+	sta     _s_full_redraw_needed
+;
+; if (input_pressed(BTN_B)) {
+;
+L0033:	lda     #$02
+	jsr     _input_pressed
+	tax
+	beq     L0024
+;
+; s_drag_active = 0;
+;
+	lda     #$00
+	sta     _s_drag_active
+;
+; if (s_full_redraw_needed) {
+;
+L0024:	lda     _s_full_redraw_needed
+	beq     L0035
+;
+; uint8_t oldMask = PPUMASK;
+;
+	lda     $2001
 	jsr     pusha
-	ldy     #$04
-	lda     (c_sp),y
-	jsr     _canvas_render_tile
+;
+; PPUMASK = 0x00; /*rendering off*/
+;
+	lda     #$00
+	sta     $2001
+;
+; canvas_render_full();
+;
+	jsr     _canvas_render_full
 ;
 ; PPUSCROLL = 0;
 ;
 	lda     #$00
-L001D:	sta     $2005
+	sta     $2005
+;
+; PPUSCROLL = 0;
+;
+	sta     $2005
+;
+; PPUMASK = 0x18; /* expliicty call sprites*/
+;
+	lda     #$18
+	sta     $2001
+;
+; s_full_redraw_needed = 0;
+;
+	lda     #$00
+	sta     _s_full_redraw_needed
+;
+; } else {
+;
+	jsr     incsp1
+	jmp     L0026
+;
+; PPUSCROLL = 0;
+;
+L0035:	sta     $2005
 ;
 ; PPUSCROLL = 0;
 ;
@@ -438,44 +2158,42 @@ L001D:	sta     $2005
 ;
 ; sprite_x = (uint8_t)(cursor_x * 8u);
 ;
-	ldy     #$04
+L0026:	ldy     #$06
 	lda     (c_sp),y
 	asl     a
 	asl     a
 	asl     a
-	ldy     #$01
+	ldy     #$03
 	sta     (c_sp),y
 ;
-; sprite_y = (uint8_t)(cursor_y * 8u + 1u);
+; sprite_y = (uint8_t)(cursor_y * 8u);
 ;
-	ldy     #$03
+	ldy     #$05
 	lda     (c_sp),y
 	asl     a
 	asl     a
 	asl     a
-	clc
-	adc     #$01
-	ldy     #$00
+	ldy     #$02
 	sta     (c_sp),y
 ;
 ; ppu_draw_cursor_sprite(3, sprite_x, sprite_y);
 ;
 	jsr     decsp2
 	lda     #$03
-	iny
+	dey
 	sta     (c_sp),y
-	tay
+	ldy     #$05
 	lda     (c_sp),y
 	ldy     #$00
 	sta     (c_sp),y
-	ldy     #$02
+	ldy     #$04
 	lda     (c_sp),y
 	jsr     _ppu_draw_cursor_sprite
 ;
 ; }
 ;
-	jsr     incsp2
-	jmp     L0006
+	jsr     incsp4
+	jmp     L0005
 
 .endproc
 
