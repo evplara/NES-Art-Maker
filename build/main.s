@@ -1938,9 +1938,18 @@ L001A:	jsr     decsp2
 	lda     (c_sp),y
 	jsr     _canvas_set_pixel
 ;
+; canvas_render_tile(cursor_x, cursor_y);
+;
+	ldy     #$06
+	lda     (c_sp),y
+	jsr     pusha
+	ldy     #$06
+	lda     (c_sp),y
+	jsr     _canvas_render_tile
+;
 ; break;
 ;
-	jmp     L0037
+	jmp     L0033
 ;
 ; canvas_set_pixel(cursor_x, cursor_y, 0);
 ;
@@ -1956,9 +1965,18 @@ L001B:	jsr     decsp2
 	tya
 	jsr     _canvas_set_pixel
 ;
+; canvas_render_tile(cursor_x, cursor_y);
+;
+	ldy     #$06
+	lda     (c_sp),y
+	jsr     pusha
+	ldy     #$06
+	lda     (c_sp),y
+	jsr     _canvas_render_tile
+;
 ; break;
 ;
-	jmp     L0037
+	jmp     L0033
 ;
 ; if (!s_drag_active) {
 ;
@@ -2090,7 +2108,7 @@ L0039:	lda     #$00
 ;
 ; s_full_redraw_needed = 1;
 ;
-L0037:	lda     #$01
+	lda     #$01
 	sta     _s_full_redraw_needed
 ;
 ; if (input_pressed(BTN_B)) {

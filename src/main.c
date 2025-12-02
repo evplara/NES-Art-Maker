@@ -352,14 +352,14 @@ void main(void) {
                 switch (s_current_tool) {
                     case TOOL_BRUSH:
                         canvas_set_pixel(cursor_x, cursor_y, current_color);
-                        // canvas_render_tile(cursor_x, cursor_y);
-                        s_full_redraw_needed = 1;
+                        canvas_render_tile(cursor_x, cursor_y);
+                        // s_full_redraw_needed = 1;    Dont redraw full screen, unnecessary for simple tools
                         break;
 
                     case TOOL_ERASER:
                         canvas_set_pixel(cursor_x, cursor_y, 0);
-                        // canvas_render_tile(cursor_x, cursor_y);
-                        s_full_redraw_needed = 1;
+                        canvas_render_tile(cursor_x, cursor_y);
+                        // s_full_redraw_needed = 1;    Dont redraw full screen, unnecessary for simple tools
                         break;
 
                     case TOOL_LINE:
