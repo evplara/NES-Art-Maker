@@ -13,7 +13,10 @@
 	.export		_g_canvas
 	.export		_canvas_clear
 	.export		_canvas_fill_demo_pattern
+	.export		_canvas_set_pixel
 	.export		_canvas_render_full
+	.export		_canvas_render_tile
+	.export		_canvas_render_rows
 
 .segment	"BSS"
 
@@ -187,6 +190,65 @@ L0003:	jmp     incsp2
 .endproc
 
 ; ---------------------------------------------------------------
+; void __near__ canvas_set_pixel (unsigned char x, unsigned char y, unsigned char color)
+; ---------------------------------------------------------------
+
+.segment	"CODE"
+
+.proc	_canvas_set_pixel: near
+
+.segment	"CODE"
+
+;
+; void canvas_set_pixel(uint8_t x, uint8_t y, uint8_t color) {
+;
+	jsr     pusha
+;
+; if (x < CANVAS_WIDTH && y < CANVAS_HEIGHT) {
+;
+	ldy     #$02
+	lda     (c_sp),y
+	cmp     #$20
+	bcs     L0002
+	dey
+	lda     (c_sp),y
+	cmp     #$1E
+	bcs     L0002
+;
+; g_canvas[y][x] = color;
+;
+	ldx     #$00
+	lda     (c_sp),y
+	jsr     aslax4
+	stx     tmp1
+	asl     a
+	rol     tmp1
+	clc
+	adc     #<(_g_canvas)
+	sta     ptr1
+	lda     tmp1
+	adc     #>(_g_canvas)
+	sta     ptr1+1
+	iny
+	lda     (c_sp),y
+	clc
+	adc     ptr1
+	ldx     ptr1+1
+	bcc     L0006
+	inx
+L0006:	sta     ptr1
+	stx     ptr1+1
+	ldy     #$00
+	lda     (c_sp),y
+	sta     (ptr1),y
+;
+; }
+;
+L0002:	jmp     incsp3
+
+.endproc
+
+; ---------------------------------------------------------------
 ; void __near__ canvas_render_full (void)
 ; ---------------------------------------------------------------
 
@@ -288,6 +350,235 @@ L0004:	dey
 ; }
 ;
 L0003:	jmp     incsp4
+
+.endproc
+
+; ---------------------------------------------------------------
+; void __near__ canvas_render_tile (unsigned char x, unsigned char y)
+; ---------------------------------------------------------------
+
+.segment	"CODE"
+
+.proc	_canvas_render_tile: near
+
+.segment	"CODE"
+
+;
+; void canvas_render_tile(uint8_t x, uint8_t y) {
+;
+	jsr     pusha
+;
+; if (x >= CANVAS_WIDTH || y >= CANVAS_HEIGHT) {
+;
+	jsr     decsp2
+	ldy     #$03
+	lda     (c_sp),y
+	cmp     #$20
+	bcs     L0001
+	dey
+	lda     (c_sp),y
+	cmp     #$1E
+	bcs     L0001
+	ldx     #$00
+;
+; addr = 0x2000 + (uint16_t)y * 32u + (uint16_t)x;
+;
+	lda     (c_sp),y
+	jsr     shlax4
+	stx     tmp1
+	asl     a
+	rol     tmp1
+	sta     ptr1
+	lda     tmp1
+	clc
+	adc     #$20
+	sta     ptr1+1
+	iny
+	lda     (c_sp),y
+	clc
+	adc     ptr1
+	ldx     ptr1+1
+	bcc     L0005
+	inx
+L0005:	jsr     stax0sp
+;
+; PPUADDR = (uint8_t)(addr >> 8);
+;
+	ldy     #$01
+	lda     (c_sp),y
+	sta     $2006
+;
+; PPUADDR = (uint8_t)(addr & 0xFF);
+;
+	dey
+	lda     (c_sp),y
+	sta     $2006
+;
+; PPUDATA = g_canvas[y][x];   /* tile index == color index (0..3) */
+;
+	ldy     #$02
+	ldx     #$00
+	lda     (c_sp),y
+	jsr     aslax4
+	stx     tmp1
+	asl     a
+	rol     tmp1
+	clc
+	adc     #<(_g_canvas)
+	sta     ptr1
+	lda     tmp1
+	adc     #>(_g_canvas)
+	sta     ptr1+1
+	iny
+	lda     (c_sp),y
+	tay
+	lda     (ptr1),y
+	sta     $2007
+;
+; }
+;
+L0001:	jmp     incsp4
+
+.endproc
+
+; ---------------------------------------------------------------
+; void __near__ canvas_render_rows (unsigned char y_start, unsigned char row_count)
+; ---------------------------------------------------------------
+
+.segment	"CODE"
+
+.proc	_canvas_render_rows: near
+
+.segment	"CODE"
+
+;
+; void canvas_render_rows(uint8_t y_start, uint8_t row_count) {
+;
+	jsr     pusha
+;
+; uint8_t y_end = (uint8_t)(y_start + row_count);
+;
+	jsr     decsp2
+	ldy     #$02
+	lda     (c_sp),y
+	clc
+	iny
+	adc     (c_sp),y
+	jsr     pusha
+;
+; if (y_start >= CANVAS_HEIGHT) {
+;
+	ldy     #$04
+	lda     (c_sp),y
+	cmp     #$1E
+;
+; return;
+;
+	jcs     L0005
+;
+; if (y_end > CANVAS_HEIGHT) {
+;
+	ldy     #$00
+	lda     (c_sp),y
+	cmp     #$1F
+	bcc     L0003
+;
+; y_end = CANVAS_HEIGHT;
+;
+	lda     #$1E
+	sta     (c_sp),y
+;
+; for (y = y_start; y < y_end; ++y) {
+;
+L0003:	ldy     #$04
+	lda     (c_sp),y
+	ldy     #$02
+L000E:	sta     (c_sp),y
+	ldy     #$00
+	cmp     (c_sp),y
+	bcs     L0005
+;
+; uint16_t addr = 0x2000u + (uint16_t)y * 32u;
+;
+	ldy     #$02
+	ldx     #$00
+	lda     (c_sp),y
+	jsr     shlax4
+	stx     tmp1
+	asl     a
+	rol     tmp1
+	pha
+	lda     tmp1
+	clc
+	adc     #$20
+	tax
+	pla
+	jsr     pushax
+;
+; PPUADDR = (uint8_t)(addr >> 8);
+;
+	ldy     #$01
+	lda     (c_sp),y
+	sta     $2006
+;
+; PPUADDR = (uint8_t)(addr & 0xFF);
+;
+	dey
+	lda     (c_sp),y
+	sta     $2006
+;
+; for (x = 0; x < CANVAS_WIDTH; ++x) {
+;
+	tya
+	ldy     #$03
+L000D:	sta     (c_sp),y
+	cmp     #$20
+	bcs     L0009
+;
+; PPUDATA = g_canvas[y][x];
+;
+	iny
+	ldx     #$00
+	lda     (c_sp),y
+	jsr     aslax4
+	stx     tmp1
+	asl     a
+	rol     tmp1
+	clc
+	adc     #<(_g_canvas)
+	sta     ptr1
+	lda     tmp1
+	adc     #>(_g_canvas)
+	sta     ptr1+1
+	dey
+	lda     (c_sp),y
+	tay
+	lda     (ptr1),y
+	sta     $2007
+;
+; for (x = 0; x < CANVAS_WIDTH; ++x) {
+;
+	ldy     #$03
+	clc
+	lda     #$01
+	adc     (c_sp),y
+	jmp     L000D
+;
+; }
+;
+L0009:	jsr     incsp2
+;
+; for (y = y_start; y < y_end; ++y) {
+;
+	ldy     #$02
+	clc
+	lda     #$01
+	adc     (c_sp),y
+	jmp     L000E
+;
+; }
+;
+L0005:	jmp     incsp5
 
 .endproc
 

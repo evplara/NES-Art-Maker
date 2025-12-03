@@ -15,6 +15,8 @@
 	.export		_ppu_write_vram
 	.export		_ppu_fill_vram
 	.export		_ppu_load_bg_palette
+	.export		_ppu_clear_oam
+	.export		_ppu_draw_cursor_sprite
 
 ; ---------------------------------------------------------------
 ; void __near__ ppu_wait_vblank (void)
@@ -60,23 +62,22 @@ L0009:	lda     $2002
 ;
 	jsr     _ppu_wait_vblank
 ;
-; PPUSCROLL = 0;
-;
-	lda     #$00
-	sta     $2005
-;
-; PPUSCROLL = 0;
-;
-	sta     $2005
-;
 ; PPUCTRL = 0x00;
 ;
+	lda     #$00
 	sta     $2000
 ;
-; PPUMASK = 0x08;
+; PPUMASK = 0x00;
 ;
-	lda     #$08
 	sta     $2001
+;
+; PPUSCROLL = 0;
+;
+	sta     $2005
+;
+; PPUSCROLL = 0;
+;
+	sta     $2005
 ;
 ; }
 ;
@@ -248,6 +249,110 @@ L0006:	sta     (c_sp),y
 ; }
 ;
 L0003:	jmp     incsp4
+
+.endproc
+
+; ---------------------------------------------------------------
+; void __near__ ppu_clear_oam (void)
+; ---------------------------------------------------------------
+
+.segment	"CODE"
+
+.proc	_ppu_clear_oam: near
+
+.segment	"CODE"
+
+;
+; OAMADDR = 0;
+;
+	jsr     decsp1
+	lda     #$00
+	sta     $2003
+;
+; for (i = 0; i < 64u; ++i) {
+;
+	tay
+L0006:	sta     (c_sp),y
+	cmp     #$40
+	bcs     L0003
+;
+; OAMDATA = 0xFF;  /* Y = 255 -> hidden */
+;
+	lda     #$FF
+	sta     $2004
+;
+; OAMDATA = 0x00;  /* tile */
+;
+	lda     #$00
+	sta     $2004
+;
+; OAMDATA = 0x00;  /* attributes */
+;
+	sta     $2004
+;
+; OAMDATA = 0x00;  /* X */
+;
+	sta     $2004
+;
+; for (i = 0; i < 64u; ++i) {
+;
+	clc
+	lda     #$01
+	adc     (c_sp),y
+	jmp     L0006
+;
+; }
+;
+L0003:	jmp     incsp1
+
+.endproc
+
+; ---------------------------------------------------------------
+; void __near__ ppu_draw_cursor_sprite (unsigned char tile, unsigned char x, unsigned char y)
+; ---------------------------------------------------------------
+
+.segment	"CODE"
+
+.proc	_ppu_draw_cursor_sprite: near
+
+.segment	"CODE"
+
+;
+; void ppu_draw_cursor_sprite(uint8_t tile, uint8_t x, uint8_t y) {
+;
+	jsr     pusha
+;
+; OAMADDR = 0;      /* sprite 0 */
+;
+	lda     #$00
+	sta     $2003
+;
+; OAMDATA = y;      /* Y position */
+;
+	tay
+	lda     (c_sp),y
+	sta     $2004
+;
+; OAMDATA = tile;   /* tile index */
+;
+	ldy     #$02
+	lda     (c_sp),y
+	sta     $2004
+;
+; OAMDATA = 0x00;   /* attributes: palette 0, no flip */
+;
+	lda     #$00
+	sta     $2004
+;
+; OAMDATA = x;      /* X position */
+;
+	dey
+	lda     (c_sp),y
+	sta     $2004
+;
+; }
+;
+	jmp     incsp3
 
 .endproc
 

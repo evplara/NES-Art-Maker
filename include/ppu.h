@@ -29,5 +29,8 @@ void ppu_fill_vram(uint16_t addr, uint16_t len, uint8_t value);
 
 /* Load background palette bytes to $3F00.. (count bytes). */
 void ppu_load_bg_palette(const uint8_t* data, uint8_t count);
+/* For sprite cursor*/
+void ppu_clear_oam(void);
+void ppu_draw_cursor_sprite(uint8_t tile, uint8_t x, uint8_t y);
 
 #endif

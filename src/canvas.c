@@ -28,11 +28,13 @@ void canvas_fill_demo_pattern(void) {
     }
 }
 
-/* Convert the canvas array into tiles in nametable 0 ($2000).
-   For now:
-   - tile index == color index (0..3)
-   - attribute table left at 0 (all use background palette 0)
-*/
+void canvas_set_pixel(uint8_t x, uint8_t y, uint8_t color) {
+    if (x < CANVAS_WIDTH && y < CANVAS_HEIGHT) {
+        g_canvas[y][x] = color;
+    }
+}
+
+
 void canvas_render_full(void) {
     uint8_t x, y;
     uint16_t addr = 0x2000;
@@ -51,4 +53,42 @@ void canvas_render_full(void) {
 
     /* Attribute table ($23C0-$23FF) will remain all zeros (palette 0).
        We'll tweak attributes later if we want fancier palette usage. */
+}
+
+void canvas_render_tile(uint8_t x, uint8_t y) {
+    uint16_t addr;
+
+    if (x >= CANVAS_WIDTH || y >= CANVAS_HEIGHT) {
+        return;
+    }
+
+    /* Nametable 0 starts at $2000, 32 tiles per row. */
+    addr = 0x2000 + (uint16_t)y * 32u + (uint16_t)x;
+
+    PPUADDR = (uint8_t)(addr >> 8);
+    PPUADDR = (uint8_t)(addr & 0xFF);
+    PPUDATA = g_canvas[y][x];   /* tile index == color index (0..3) */
+}
+
+void canvas_render_rows(uint8_t y_start, uint8_t row_count) {
+    uint8_t y, x;
+    uint8_t y_end = (uint8_t)(y_start + row_count);
+
+    if (y_start >= CANVAS_HEIGHT) {
+        return;
+    }
+    if (y_end > CANVAS_HEIGHT) {
+        y_end = CANVAS_HEIGHT;
+    }
+
+    for (y = y_start; y < y_end; ++y) {
+        uint16_t addr = 0x2000u + (uint16_t)y * 32u;
+
+        PPUADDR = (uint8_t)(addr >> 8);
+        PPUADDR = (uint8_t)(addr & 0xFF);
+
+        for (x = 0; x < CANVAS_WIDTH; ++x) {
+            PPUDATA = g_canvas[y][x];
+        }
+    }
 }
