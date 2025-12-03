@@ -259,6 +259,33 @@ static void canvas_clear_drawing_area(void) {
     }
 }
 
+/* PRNG */
+static uint16_t s_rng = 0xACE1;  /* any non-zero seed 0xACE1 is a common starting seed*/
+
+static uint8_t rand8(void) {
+    uint16_t x = s_rng;
+    x ^= x << 7;
+    x ^= x >> 9;
+    x ^= x << 8;
+    s_rng = x;
+    return (uint8_t)x;
+}
+
+/* Fill drawing area with random noise using colors 0..3 */
+static void generate_noise_pattern(void) {
+    uint8_t x, y;
+
+    for (y = UI_FIRST_DRAW_ROW; y < CANVAS_HEIGHT; ++y) {
+        for (x = 0; x < CANVAS_WIDTH; ++x) {
+            /* random color 0..3 */
+            g_canvas[y][x] = (uint8_t)(rand8() & 3u);
+        }
+    }
+
+    /* Tell main loop to redraw nametable with rendering OFF */
+    s_full_redraw_needed = 1;
+}
+
 
 void main(void) {
     uint8_t cursor_x;
@@ -312,96 +339,102 @@ void main(void) {
             !(prev & BTN_START) && !(prev & BTN_SELECT)) {
             s_drag_active = 0;
             canvas_clear_drawing_area();
-            /* UI still lives in rows 0-1; refresh bars just in case */
             ui_update_palette_bar(current_color);
             ui_update_tool_indicator(s_current_tool);
             s_full_redraw_needed = 1;
         } else {
-            /* Tool selection: START cycles tool */
-            if (input_pressed(BTN_START)) {
-                s_drag_active = 0;
-                s_current_tool = (Tool)((s_current_tool + 1) % TOOL_COUNT);
-                ui_update_tool_indicator(s_current_tool);
-            }
-
-            /* color selection: SELECT cycles brush color 1..3- */
-            if (input_pressed(BTN_SELECT)) {
-                current_color++;
-                if (current_color > 3u) {
-                    current_color = 1u;
+            /* A+B combo: generate random noise over drawing area */
+            if ((buttons & BTN_A) && (buttons & BTN_B) &&
+                !(prev & BTN_A) && !(prev & BTN_B)) {
+                s_drag_active = 0;          /* cancel line/rect drags */
+                generate_noise_pattern();   /* sets s_full_redraw_needed */
+            } else {
+                /* Tool selection: START cycles tool */
+                if (input_pressed(BTN_START)) {
+                    s_drag_active = 0;
+                    s_current_tool = (Tool)((s_current_tool + 1) % TOOL_COUNT);
+                    ui_update_tool_indicator(s_current_tool);
                 }
-                ui_update_palette_bar(current_color);
-            }
 
-            /* Cursor movement (stay out of UI rows) */
-            if (input_pressed(BTN_LEFT)) {
-                if (cursor_x > 0) cursor_x--;
-            }
-            if (input_pressed(BTN_RIGHT)) {
-                if (cursor_x < (CANVAS_WIDTH - 1u)) cursor_x++;
-            }
-            if (input_pressed(BTN_UP)) {
-                if (cursor_y > UI_FIRST_DRAW_ROW) cursor_y--;
-            }
-            if (input_pressed(BTN_DOWN)) {
-                if (cursor_y < (CANVAS_HEIGHT - 1u)) cursor_y++;
-            }
+                /* color selection: SELECT cycles brush color 1..3- */
+                if (input_pressed(BTN_SELECT)) {
+                    current_color++;
+                    if (current_color > 3u) {
+                        current_color = 1u;
+                    }
+                    ui_update_palette_bar(current_color);
+                }
 
-            /* Tool action on A pres */
-            if (input_pressed(BTN_A)) {
-                switch (s_current_tool) {
-                    case TOOL_BRUSH:
-                        canvas_set_pixel(cursor_x, cursor_y, current_color);
-                        canvas_render_tile(cursor_x, cursor_y);
-                        // s_full_redraw_needed = 1;    Dont redraw full screen, unnecessary for simple tools
-                        break;
+                /* Cursor movement stays out of UI rows */
+                if (input_pressed(BTN_LEFT)) {
+                    if (cursor_x > 0) cursor_x--;
+                }
+                if (input_pressed(BTN_RIGHT)) {
+                    if (cursor_x < (CANVAS_WIDTH - 1u)) cursor_x++;
+                }
+                if (input_pressed(BTN_UP)) {
+                    if (cursor_y > UI_FIRST_DRAW_ROW) cursor_y--;
+                }
+                if (input_pressed(BTN_DOWN)) {
+                    if (cursor_y < (CANVAS_HEIGHT - 1u)) cursor_y++;
+                }
 
-                    case TOOL_ERASER:
-                        canvas_set_pixel(cursor_x, cursor_y, 0);
-                        canvas_render_tile(cursor_x, cursor_y);
-                        // s_full_redraw_needed = 1;    Dont redraw full screen, unnecessary for simple tools
-                        break;
+                /* Tool action on A pres */
+                if (input_pressed(BTN_A)) {
+                    switch (s_current_tool) {
+                        case TOOL_BRUSH:
+                            canvas_set_pixel(cursor_x, cursor_y, current_color);
+                            canvas_render_tile(cursor_x, cursor_y);
+                            // s_full_redraw_needed = 1;    Dont redraw full screen unnecessary for simple tools
+                            break;
 
-                    case TOOL_LINE:
-                        if (!s_drag_active) {
-                            s_drag_active = 1;
-                            s_drag_start_x = cursor_x;
-                            s_drag_start_y = cursor_y;
-                        } else {
-                            draw_line(s_drag_start_x, s_drag_start_y,
-                                      cursor_x, cursor_y, current_color);
+                        case TOOL_ERASER:
+                            canvas_set_pixel(cursor_x, cursor_y, 0);
+                            canvas_render_tile(cursor_x, cursor_y);
+                            // s_full_redraw_needed = 1;    Dont redraw full screen unnecessary for simple tools
+                            break;
+
+                        case TOOL_LINE:
+                            if (!s_drag_active) {
+                                s_drag_active = 1;
+                                s_drag_start_x = cursor_x;
+                                s_drag_start_y = cursor_y;
+                            } else {
+                                draw_line(s_drag_start_x, s_drag_start_y,
+                                        cursor_x, cursor_y, current_color);
+                                s_drag_active = 0;
+                                s_full_redraw_needed = 1;
+                            }
+                            break;
+
+                        case TOOL_RECT:
+                            if (!s_drag_active) {
+                                s_drag_active = 1;
+                                s_drag_start_x = cursor_x;
+                                s_drag_start_y = cursor_y;
+                            } else {
+                                draw_rect(s_drag_start_x, s_drag_start_y,
+                                        cursor_x, cursor_y, current_color);
+                                s_drag_active = 0;
+                                s_full_redraw_needed = 1;
+                            }
+                            break;
+
+                        case TOOL_FILL:
+                            tool_flood_fill(cursor_x, cursor_y, current_color);
                             s_drag_active = 0;
                             s_full_redraw_needed = 1;
-                        }
-                        break;
+                            break;
 
-                    case TOOL_RECT:
-                        if (!s_drag_active) {
-                            s_drag_active = 1;
-                            s_drag_start_x = cursor_x;
-                            s_drag_start_y = cursor_y;
-                        } else {
-                            draw_rect(s_drag_start_x, s_drag_start_y,
-                                      cursor_x, cursor_y, current_color);
-                            s_drag_active = 0;
-                            s_full_redraw_needed = 1;
-                        }
-                        break;
-
-                    case TOOL_FILL:
-                        tool_flood_fill(cursor_x, cursor_y, current_color);
-                        s_drag_active = 0;
-                        s_full_redraw_needed = 1;
-                        break;
-
-                    default:
-                        break;
+                        default:
+                            break;
                 }
             }
 
-            /* B cancels a pending line/rect "first click" */
-            if (input_pressed(BTN_B)) {
-                s_drag_active = 0;
+                /* B cancels a pending line/rect  */
+                if (input_pressed(BTN_B)) {
+                    s_drag_active = 0;
+                }
             }
         }
 
