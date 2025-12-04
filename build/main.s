@@ -41,6 +41,8 @@ _s_drag_start_y:
 	.byte	$00
 _s_palette_mode:
 	.byte	$00
+_s_frame_counter:
+	.word	$0000
 _s_rng:
 	.word	$ACE1
 
@@ -2011,9 +2013,15 @@ L000D:	lda     #$01
 L0005:	jsr     decsp4
 	jsr     _ppu_wait_vblank
 ;
+; s_frame_counter++;
+;
+	inc     _s_frame_counter
+	bne     L0006
+	inc     _s_frame_counter+1
+;
 ; input_update();
 ;
-	jsr     _input_update
+L0006:	jsr     _input_update
 ;
 ; buttons = input_get_buttons();
 ;
@@ -2032,20 +2040,20 @@ L0005:	jsr     decsp4
 	iny
 	lda     (c_sp),y
 	and     #$08
-	beq     L003E
+	beq     L003F
 	lda     (c_sp),y
 	and     #$04
-	beq     L003E
+	beq     L003F
 ;
 ; !(prev & BTN_START) && !(prev & BTN_SELECT)) {
 ;
 	dey
 	lda     (c_sp),y
 	and     #$08
-	bne     L0006
+	bne     L0007
 	lda     (c_sp),y
 	and     #$04
-	bne     L0006
+	bne     L0007
 ;
 ; s_drag_active = 0;
 ;
@@ -2073,31 +2081,40 @@ L0005:	jsr     decsp4
 ;
 ; } else {
 ;
-	jmp     L002A
+	jmp     L002B
 ;
 ; if ((buttons & BTN_A) && (buttons & BTN_B) &&
 ;
-L0006:	iny
-L003E:	lda     (c_sp),y
+L0007:	iny
+L003F:	lda     (c_sp),y
 	and     #$01
-	beq     L0033
+	beq     L0034
 	lda     (c_sp),y
 	and     #$02
-	beq     L0033
+	beq     L0034
 ;
 ; !(prev & BTN_A) && !(prev & BTN_B)) {
 ;
 	dey
 	lda     (c_sp),y
 	and     #$01
-	bne     L0033
+	bne     L0034
 	lda     (c_sp),y
 	and     #$02
-	bne     L0033
+	bne     L0034
 ;
 ; s_drag_active = 0;          /* cancel line/rect drags */
 ;
 	sta     _s_drag_active
+;
+; s_rng = (uint16_t)(0xACE1u ^ s_frame_counter);
+;
+	lda     _s_frame_counter
+	eor     #$E1
+	sta     _s_rng
+	lda     _s_frame_counter+1
+	eor     #$AC
+	sta     _s_rng+1
 ;
 ; generate_noise_pattern();   /* sets s_full_redraw_needed */
 ;
@@ -2105,14 +2122,14 @@ L003E:	lda     (c_sp),y
 ;
 ; } else {
 ;
-	jmp     L002A
+	jmp     L002B
 ;
 ; if (input_pressed(BTN_START)) {
 ;
-L0033:	lda     #$08
+L0034:	lda     #$08
 	jsr     _input_pressed
 	tax
-	beq     L0034
+	beq     L0035
 ;
 ; s_drag_active = 0;
 ;
@@ -2125,9 +2142,9 @@ L0033:	lda     #$08
 	lda     _s_current_tool
 	clc
 	adc     #$01
-	bcc     L0011
+	bcc     L0012
 	inx
-L0011:	jsr     pushax
+L0012:	jsr     pushax
 	ldx     #$00
 	lda     #$05
 	jsr     tosmoda0
@@ -2139,10 +2156,10 @@ L0011:	jsr     pushax
 ;
 ; if (input_pressed(BTN_SELECT)) {
 ;
-L0034:	lda     #$04
+L0035:	lda     #$04
 	jsr     _input_pressed
 	tax
-	beq     L0037
+	beq     L0038
 ;
 ; s_palette_mode = (uint8_t)((s_palette_mode + 1) % 3);
 ;
@@ -2150,9 +2167,9 @@ L0034:	lda     #$04
 	lda     _s_palette_mode
 	clc
 	adc     #$01
-	bcc     L0013
+	bcc     L0014
 	inx
-L0013:	jsr     pushax
+L0014:	jsr     pushax
 	ldx     #$00
 	lda     #$03
 	jsr     tosmoda0
@@ -2173,44 +2190,44 @@ L0013:	jsr     pushax
 ; if (current_color > 3u) current_color = 1u;
 ;
 	cmp     #$04
-	bcc     L0036
+	bcc     L0037
 	lda     #$01
 	sta     (c_sp),y
 ;
 ; ui_update_palette_bar(current_color);
 ;
-L0036:	lda     (c_sp),y
+L0037:	lda     (c_sp),y
 	jsr     _ui_update_palette_bar
 ;
 ; if (input_pressed(BTN_LEFT)) {
 ;
-L0037:	lda     #$40
+L0038:	lda     #$40
 	jsr     _input_pressed
 	tax
-	beq     L0038
+	beq     L0039
 ;
 ; if (cursor_x > 0) cursor_x--;
 ;
 	ldy     #$06
 	lda     (c_sp),y
-	beq     L0038
+	beq     L0039
 	sec
 	sbc     #$01
 	sta     (c_sp),y
 ;
 ; if (input_pressed(BTN_RIGHT)) {
 ;
-L0038:	lda     #$80
+L0039:	lda     #$80
 	jsr     _input_pressed
 	tax
-	beq     L0039
+	beq     L003A
 ;
 ; if (cursor_x < (CANVAS_WIDTH - 1u)) cursor_x++;
 ;
 	ldy     #$06
 	lda     (c_sp),y
 	cmp     #$1F
-	bcs     L0039
+	bcs     L003A
 	clc
 	lda     #$01
 	adc     (c_sp),y
@@ -2218,34 +2235,34 @@ L0038:	lda     #$80
 ;
 ; if (input_pressed(BTN_UP)) {
 ;
-L0039:	lda     #$10
+L003A:	lda     #$10
 	jsr     _input_pressed
 	tax
-	beq     L003A
+	beq     L003B
 ;
 ; if (cursor_y > UI_FIRST_DRAW_ROW) cursor_y--;
 ;
 	ldy     #$05
 	lda     (c_sp),y
 	cmp     #$03
-	bcc     L003A
+	bcc     L003B
 	sec
 	sbc     #$01
 	sta     (c_sp),y
 ;
 ; if (input_pressed(BTN_DOWN)) {
 ;
-L003A:	lda     #$20
+L003B:	lda     #$20
 	jsr     _input_pressed
 	tax
-	beq     L003B
+	beq     L003C
 ;
 ; if (cursor_y < (CANVAS_HEIGHT - 1u)) cursor_y++;
 ;
 	ldy     #$05
 	lda     (c_sp),y
 	cmp     #$1D
-	bcs     L003B
+	bcs     L003C
 	clc
 	lda     #$01
 	adc     (c_sp),y
@@ -2253,10 +2270,10 @@ L003A:	lda     #$20
 ;
 ; if (input_pressed(BTN_A)) {
 ;
-L003B:	lda     #$01
+L003C:	lda     #$01
 	jsr     _input_pressed
 	tax
-	jeq     L003C
+	jeq     L003D
 ;
 ; switch (s_current_tool) {
 ;
@@ -2264,20 +2281,20 @@ L003B:	lda     #$01
 ;
 ; }
 ;
-	beq     L0020
-	cmp     #$01
 	beq     L0021
-	cmp     #$02
+	cmp     #$01
 	beq     L0022
+	cmp     #$02
+	beq     L0023
 	cmp     #$03
-	jeq     L0025
+	jeq     L0026
 	cmp     #$04
-	jeq     L0028
-	jmp     L003C
+	jeq     L0029
+	jmp     L003D
 ;
 ; canvas_set_pixel(cursor_x, cursor_y, current_color);
 ;
-L0020:	jsr     decsp2
+L0021:	jsr     decsp2
 	ldy     #$08
 	lda     (c_sp),y
 	ldy     #$01
@@ -2301,11 +2318,11 @@ L0020:	jsr     decsp2
 ;
 ; break;
 ;
-	jmp     L003C
+	jmp     L003D
 ;
 ; canvas_set_pixel(cursor_x, cursor_y, 0);
 ;
-L0021:	jsr     decsp2
+L0022:	jsr     decsp2
 	ldy     #$08
 	lda     (c_sp),y
 	ldy     #$01
@@ -2328,12 +2345,12 @@ L0021:	jsr     decsp2
 ;
 ; break;
 ;
-	jmp     L003C
+	jmp     L003D
 ;
 ; if (!s_drag_active) {
 ;
-L0022:	lda     _s_drag_active
-	bne     L0023
+L0023:	lda     _s_drag_active
+	bne     L0024
 ;
 ; s_drag_active = 1;
 ;
@@ -2354,11 +2371,11 @@ L0022:	lda     _s_drag_active
 ;
 ; } else {
 ;
-	jmp     L003C
+	jmp     L003D
 ;
 ; draw_line(s_drag_start_x, s_drag_start_y,
 ;
-L0023:	jsr     decsp4
+L0024:	jsr     decsp4
 	lda     _s_drag_start_x
 	ldy     #$03
 	sta     (c_sp),y
@@ -2382,12 +2399,12 @@ L0023:	jsr     decsp4
 ;
 ; break;
 ;
-	jmp     L0041
+	jmp     L0042
 ;
 ; if (!s_drag_active) {
 ;
-L0025:	lda     _s_drag_active
-	bne     L0026
+L0026:	lda     _s_drag_active
+	bne     L0027
 ;
 ; s_drag_active = 1;
 ;
@@ -2408,11 +2425,11 @@ L0025:	lda     _s_drag_active
 ;
 ; } else {
 ;
-	jmp     L003C
+	jmp     L003D
 ;
 ; draw_rect(s_drag_start_x, s_drag_start_y,
 ;
-L0026:	jsr     decsp4
+L0027:	jsr     decsp4
 	lda     _s_drag_start_x
 	ldy     #$03
 	sta     (c_sp),y
@@ -2436,11 +2453,11 @@ L0026:	jsr     decsp4
 ;
 ; break;
 ;
-	jmp     L0041
+	jmp     L0042
 ;
 ; tool_flood_fill(cursor_x, cursor_y, current_color);
 ;
-L0028:	jsr     decsp2
+L0029:	jsr     decsp2
 	ldy     #$08
 	lda     (c_sp),y
 	ldy     #$01
@@ -2455,7 +2472,7 @@ L0028:	jsr     decsp2
 ;
 ; s_drag_active = 0;
 ;
-L0041:	lda     #$00
+L0042:	lda     #$00
 	sta     _s_drag_active
 ;
 ; s_full_redraw_needed = 1;
@@ -2465,10 +2482,10 @@ L0041:	lda     #$00
 ;
 ; if (input_pressed(BTN_B)) {
 ;
-L003C:	lda     #$02
+L003D:	lda     #$02
 	jsr     _input_pressed
 	tax
-	beq     L002A
+	beq     L002B
 ;
 ; s_drag_active = 0;
 ;
@@ -2477,8 +2494,8 @@ L003C:	lda     #$02
 ;
 ; if (s_full_redraw_needed) {
 ;
-L002A:	lda     _s_full_redraw_needed
-	beq     L002B
+L002B:	lda     _s_full_redraw_needed
+	beq     L002C
 ;
 ; uint8_t oldMask = PPUMASK;
 ;
@@ -2516,11 +2533,11 @@ L002A:	lda     _s_full_redraw_needed
 ; } else {
 ;
 	jsr     incsp1
-	jmp     L002C
+	jmp     L002D
 ;
 ; PPUSCROLL = 0;
 ;
-L002B:	sta     $2005
+L002C:	sta     $2005
 ;
 ; PPUSCROLL = 0;
 ;
@@ -2528,7 +2545,7 @@ L002B:	sta     $2005
 ;
 ; sprite_x = (uint8_t)(cursor_x * 8u);
 ;
-L002C:	ldy     #$06
+L002D:	ldy     #$06
 	lda     (c_sp),y
 	asl     a
 	asl     a

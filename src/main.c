@@ -36,6 +36,9 @@ static uint8_t s_drag_start_y = 0;
 
 static uint8_t s_palette_mode = 0;  /* 0=blue,1=green,2=red */
 
+static uint16_t s_frame_counter = 0; /*used for randomness*/
+
+
 
 /* Background palette:
  * palette 0: universal + three colors used by tiles 1-3.
@@ -364,6 +367,7 @@ void main(void) {
         uint8_t prev;
 
         ppu_wait_vblank();
+        s_frame_counter++;
         input_update();
 
         buttons = input_get_buttons();
@@ -382,6 +386,7 @@ void main(void) {
             if ((buttons & BTN_A) && (buttons & BTN_B) &&
                 !(prev & BTN_A) && !(prev & BTN_B)) {
                 s_drag_active = 0;          /* cancel line/rect drags */
+                s_rng = (uint16_t)(0xACE1u ^ s_frame_counter);
                 generate_noise_pattern();   /* sets s_full_redraw_needed */
             } else {
                 /* Tool selection START cycles tool */
