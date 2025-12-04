@@ -17,6 +17,7 @@
 	.export		_canvas_render_full
 	.export		_canvas_render_tile
 	.export		_canvas_render_rows
+	.import		_ppu_fill_vram
 
 .segment	"BSS"
 
@@ -347,9 +348,25 @@ L0004:	dey
 	adc     (c_sp),y
 	jmp     L000B
 ;
+; ppu_fill_vram(0x23C0, 64, 0x00);
+;
+L0003:	jsr     decsp4
+	lda     #$C0
+	sta     (c_sp),y
+	iny
+	lda     #$23
+	sta     (c_sp),y
+	lda     #$40
+	ldy     #$00
+	sta     (c_sp),y
+	iny
+	lda     #$00
+	sta     (c_sp),y
+	jsr     _ppu_fill_vram
+;
 ; }
 ;
-L0003:	jmp     incsp4
+	jmp     incsp4
 
 .endproc
 

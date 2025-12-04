@@ -51,8 +51,7 @@ void canvas_render_full(void) {
         }
     }
 
-    /* Attribute table ($23C0-$23FF) will remain all zeros (palette 0).
-       We'll tweak attributes later if we want fancier palette usage. */
+    ppu_fill_vram(0x23C0, 64, 0x00);
 }
 
 void canvas_render_tile(uint8_t x, uint8_t y) {

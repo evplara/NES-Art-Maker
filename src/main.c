@@ -34,6 +34,9 @@ static uint8_t s_drag_active = 0;
 static uint8_t s_drag_start_x = 0;
 static uint8_t s_drag_start_y = 0;
 
+static uint8_t s_palette_mode = 0;  /* 0=blue,1=green,2=red */
+
+
 /* Background palette:
  * palette 0: universal + three colors used by tiles 1-3.
  */
@@ -67,6 +70,38 @@ static void ui_update_palette_bar(uint8_t current_color) {
     g_canvas[UI_HIGHLIGHT_ROW][current_color] = current_color;
     canvas_render_tile(current_color, UI_HIGHLIGHT_ROW);
 }
+
+static void apply_palette_mode(void) {
+    uint8_t pal[16];
+
+    /* universal background stays the same */
+    pal[0] = 0x0F;
+    pal[4] = 0x0F;
+    pal[8] = 0x0F;
+    pal[12] = 0x0F;
+
+    switch (s_palette_mode) {
+        case 0: /* blues in palette 0 */
+            pal[1] = 0x01; pal[2] = 0x11; pal[3] = 0x21;
+            pal[5] = 0x06; pal[6] = 0x16; pal[7] = 0x26; /* reds in 1 */
+            pal[9] = 0x09; pal[10] = 0x19; pal[11] = 0x29; /* greens in 2 */
+            pal[13] = 0x0A; pal[14] = 0x1A; pal[15] = 0x2A;
+            break;
+        case 1: /* greens in palette 0 */
+            pal[1] = 0x09; pal[2] = 0x19; pal[3] = 0x29;
+            /* keep others whatever you like */
+            /* ... */
+            break;
+        case 2: /* reds in palette 0 */
+            pal[1] = 0x06; pal[2] = 0x16; pal[3] = 0x26;
+            /* ... */
+            break;
+    }
+
+    ppu_wait_vblank();
+    ppu_load_bg_palette(pal, 16);
+}
+
 
 /* Simple tool indicator in row 1, columns 6..9.
    We just use different color patterns for each tool:
@@ -349,21 +384,25 @@ void main(void) {
                 s_drag_active = 0;          /* cancel line/rect drags */
                 generate_noise_pattern();   /* sets s_full_redraw_needed */
             } else {
-                /* Tool selection: START cycles tool */
+                /* Tool selection START cycles tool */
                 if (input_pressed(BTN_START)) {
                     s_drag_active = 0;
                     s_current_tool = (Tool)((s_current_tool + 1) % TOOL_COUNT);
                     ui_update_tool_indicator(s_current_tool);
                 }
 
-                /* color selection: SELECT cycles brush color 1..3- */
+                /* color selection SELECT cycles brush color 1..3- */
                 if (input_pressed(BTN_SELECT)) {
-                    current_color++;
-                    if (current_color > 3u) {
-                        current_color = 1u;
-                    }
-                    ui_update_palette_bar(current_color);
-                }
+                /* cycle palette mode 0->1->2->0 */
+                s_palette_mode = (uint8_t)((s_palette_mode + 1) % 3);
+                apply_palette_mode();
+
+                current_color++;
+                if (current_color > 3u) current_color = 1u;
+
+                ui_update_palette_bar(current_color);
+            }
+
 
                 /* Cursor movement stays out of UI rows */
                 if (input_pressed(BTN_LEFT)) {
