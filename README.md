@@ -73,7 +73,7 @@ cl65 -t nes -C nes.cfg -o game.nes crt0.s main.c ppu.c input.c canvas.c tiles.s
 Or through provided Makefile or build.ps1 with Windows through Powershell
 
 Or simply install it in the "bin" folder
-Load game.nes into emulator, preferably Mesen
+Load game.nes into emulator, preferably Mesen https://www.mesen.ca/
 
 Can be played on original NES hardware with a flash cartridge. 
 
@@ -108,6 +108,8 @@ Compiler: https://cc65.github.io/
 Information on hardware and NES developer community: https://www.nesdev.org/
 
 Useful videos on setting up development environment plus hardware explanations: https://www.youtube.com/@NesHacker/videos
+
+Emulator: https://www.mesen.ca/
 
 ### Notes on challenges I faced
 https://docs.google.com/document/d/1ZmzFfWVHCw7YIlpXInaJjBO7U9oi_nbgsbmdkurYeyQ/edit?usp=sharing
