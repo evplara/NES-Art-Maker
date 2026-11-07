@@ -1,3 +1,7 @@
+
+
+
+
 # NES Art Maker 
 
 A small NES art program built using cc65, running on a simple NROM-256 ROM layout.
@@ -18,6 +22,8 @@ Load game.nes into emulator, preferably Mesen https://www.mesen.ca/
 Can be played on original NES hardware with a flash cartridge. 
 
 Simply burn the game.nes file into SD card, then insert SD card into flash cart, and insert flast cart into NES.
+
+https://github.com/user-attachments/assets/dc0b16f4-ea21-4be8-8da7-fd0a03f6a596
 
 ## Controls
 D-Pad:	Move cursor
