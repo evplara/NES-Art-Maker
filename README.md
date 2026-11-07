@@ -3,6 +3,39 @@
 A small NES art program built using cc65, running on a simple NROM-256 ROM layout.
 It includes a canvas you can draw on with multiple tools, a palette system with blue/green/red regions, and a random noise generator.
 
+## Build Instructions
+Install cc65 through https://cc65.github.io/getting-started.html
+
+Run in terminal:
+
+cl65 -t nes -C nes.cfg -o game.nes crt0.s main.c ppu.c input.c canvas.c tiles.s
+
+Or through provided Makefile or build.ps1 with Windows through Powershell
+
+Or simply install it in the "bin" folder
+Load game.nes into emulator, preferably Mesen https://www.mesen.ca/
+
+Can be played on original NES hardware with a flash cartridge. 
+
+Simply burn the game.nes file into SD card, then insert SD card into flash cart, and insert flast cart into NES.
+
+## Controls
+D-Pad:	Move cursor
+
+A: Use current tool
+
+B:	Cancel drag (line/rect)
+
+START:	Cycle tools
+
+SELECT:	Cycle brush colors (blue → green → red)
+
+A + B:	Generate random noise
+
+START + SELECT:	Clear drawing area
+
+UI: Top two rows, top left shows color palette, squares on the second row to the right show the tool. Dark: brush, No square: eraser, Medium: Line, Light: Rectangle, Dark: Fill
+
 ## Features:
   Cursor-based drawing system
   
@@ -63,38 +96,7 @@ canvas.c / canvas.h
   
   Attribute table builder for per-region palettes
 
-## Build Instructions
-Install cc65 through https://cc65.github.io/getting-started.html
 
-Run in terminal:
-
-cl65 -t nes -C nes.cfg -o game.nes crt0.s main.c ppu.c input.c canvas.c tiles.s
-
-Or through provided Makefile or build.ps1 with Windows through Powershell
-
-Or simply install it in the "bin" folder
-Load game.nes into emulator, preferably Mesen https://www.mesen.ca/
-
-Can be played on original NES hardware with a flash cartridge. 
-
-Simply burn the game.nes file into SD card, then insert SD card into flash cart, and insert flast cart into NES.
-
-## Controls
-D-Pad:	Move cursor
-
-A: Use current tool
-
-B:	Cancel drag (line/rect)
-
-START:	Cycle tools
-
-SELECT:	Cycle brush colors (blue → green → red)
-
-A + B:	Generate random noise
-
-START + SELECT:	Clear drawing area
-
-UI: Top two rows, top left shows color palette, squares on the second row to the right show the tool. Dark: brush, No square: eraser, Medium: Line, Light: Rectangle, Dark: Fill
 
 ## Postmortem
 As someone with no familiarity with 6502 assembly, choosing to make a program in this language was not the smartest idea. Creating something with any artistic substance with my lack of knowledge was a huge hurdle to go over in the few weeks we had to make this. It is impressive to me what I was able to do, but from an outsider's perspective, my program might seem simple and lacking. A  majority of my time was spent researching and reading documentation on how NES programs are to be setup. Once I got the C code and main game logic, it was not so bad. Many bugs that arose were not due to my code's logic, but due to the limitations on NES hardware. Read the Doc at the bottom to see the list of challenges I faced because of the limitations of the NES. If I were to do this again, I would choose not to place such a heavy restriction on myself with the limited time I had. If there were more time to do this, I could have made something with more substance and fun that would look like an actual game. I should have chosen a more modern console that is easier to learn or that I have more knowledge of.
